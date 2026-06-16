@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Exceptions\ElevenLabsSpeechToTextException;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
@@ -32,13 +33,19 @@ class ElevenLabsSpeechToTextService
         $stream = fopen($file['path'], 'rb');
 
         if ($stream === false) {
-            throw new ElevenLabsSpeechToTextException('Unable to open audio file for transcription.');
+            throw new ElevenLabsSpeechToTextException(ServiceUserMessage::audioReadFailed());
         }
 
         try {
             $response = $this->client()
                 ->attach('file', $stream, $file['name'])
                 ->post($this->getEndpoint(), $this->payload($options));
+        } catch (ConnectionException $exception) {
+            throw new ElevenLabsSpeechToTextException(
+                ServiceUserMessage::cannotReachProvider('ElevenLabs'),
+                0,
+                $exception,
+            );
         } finally {
             if (is_resource($stream)) {
                 fclose($stream);
@@ -46,12 +53,8 @@ class ElevenLabsSpeechToTextService
         }
 
         if ($response->failed()) {
-            $message = $response->json('detail.message')
-                ?? $response->json('message')
-                ?? 'ElevenLabs speech-to-text request failed.';
-
             throw new ElevenLabsSpeechToTextException(
-                is_string($message) ? $message : 'ElevenLabs speech-to-text request failed.',
+                $this->userMessageForFailedResponse($response->status()),
                 $response->status()
             );
         }
@@ -68,7 +71,7 @@ class ElevenLabsSpeechToTextService
             $path = $audio->getRealPath();
 
             if (! is_string($path) || ! is_file($path)) {
-                throw new ElevenLabsSpeechToTextException('Uploaded audio file is not readable.');
+                throw new ElevenLabsSpeechToTextException(ServiceUserMessage::audioReadFailed());
             }
 
             return [
@@ -81,7 +84,7 @@ class ElevenLabsSpeechToTextService
             $path = $audio->getRealPath();
 
             if (! is_string($path) || ! is_file($path)) {
-                throw new ElevenLabsSpeechToTextException('Audio file is not readable.');
+                throw new ElevenLabsSpeechToTextException(ServiceUserMessage::audioReadFailed());
             }
 
             return [
@@ -91,7 +94,7 @@ class ElevenLabsSpeechToTextService
         }
 
         if (! is_file($audio)) {
-            throw new ElevenLabsSpeechToTextException('Audio file does not exist.');
+            throw new ElevenLabsSpeechToTextException(ServiceUserMessage::audioReadFailed());
         }
 
         return [
@@ -107,7 +110,7 @@ class ElevenLabsSpeechToTextService
             ?? config('services.elevenlabs.key');
 
         if (! is_string($apiKey) || trim($apiKey) === '') {
-            throw new ElevenLabsSpeechToTextException('ElevenLabs API key is not configured.');
+            throw new ElevenLabsSpeechToTextException(ServiceUserMessage::missingApiKey('ElevenLabs'));
         }
 
         return Http::withHeaders([
@@ -150,10 +153,20 @@ class ElevenLabsSpeechToTextService
         ]);
 
         if (! is_string($modelId) || ! in_array($modelId, $allowedModels, true)) {
-            throw new ElevenLabsSpeechToTextException('Unsupported ElevenLabs speech-to-text model.');
+            throw new ElevenLabsSpeechToTextException(ServiceUserMessage::unsupportedProviderModel('ElevenLabs'));
         }
 
         return $modelId;
+    }
+
+    private function userMessageForFailedResponse(int $status): string
+    {
+        return match (true) {
+            in_array($status, [401, 403], true) => ServiceUserMessage::providerRejectedKey('ElevenLabs'),
+            $status === 429 => ServiceUserMessage::providerBusy('ElevenLabs'),
+            $status >= 500 => ServiceUserMessage::providerUnavailable('ElevenLabs'),
+            default => ServiceUserMessage::transcriptionFailed('ElevenLabs'),
+        };
     }
 
     /**

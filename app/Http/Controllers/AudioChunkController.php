@@ -2,9 +2,10 @@
 
 namespace App\Http\Controllers;
 
-use App\Exceptions\ElevenLabsSpeechToTextException;
+use App\Exceptions\SpeechToTextException;
 use App\Services\AudioFileChunkerService;
-use App\Services\ElevenLabsSpeechToTextService;
+use App\Services\ServiceUserMessage;
+use App\Services\SpeechToTextService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response;
 use Illuminate\Http\Request;
@@ -67,7 +68,7 @@ class AudioChunkController extends Controller
 
     public function store(
         Request $request,
-        ElevenLabsSpeechToTextService $speechToText,
+        SpeechToTextService $speechToText,
         AudioFileChunkerService $chunker,
     ): JsonResponse
     {
@@ -91,7 +92,7 @@ class AudioChunkController extends Controller
 
         if ($contents === false) {
             return response()->json([
-                'message' => 'failed to read audio file',
+                'message' => ServiceUserMessage::audioReadFailed(),
             ], 500);
         }
 
@@ -100,7 +101,7 @@ class AudioChunkController extends Controller
 
         try {
             $transcription = $speechToText->transcribe($file);
-        } catch (ElevenLabsSpeechToTextException $exception) {
+        } catch (SpeechToTextException $exception) {
             Log::error('Live audio chunk transcription failed.', [
                 'message' => $exception->getMessage(),
                 'clip_index' => (int) $validated['clip_index'],
@@ -153,7 +154,7 @@ class AudioChunkController extends Controller
 
     private function storeUploadedSection(
         Request $request,
-        ElevenLabsSpeechToTextService $speechToText,
+        SpeechToTextService $speechToText,
         AudioFileChunkerService $chunker,
     ): JsonResponse {
         @set_time_limit(0);
@@ -162,8 +163,6 @@ class AudioChunkController extends Controller
             'upload_session_id' => ['required', 'string', 'max:80'],
             'user_id' => ['nullable', 'integer', 'min:1'],
             'category_name' => ['required', 'string', 'max:120'],
-            'model_id' => ['nullable', 'in:scribe_v2,scribe_v1'],
-            'language_code' => ['nullable', 'string', 'max:12'],
             'clip_index' => ['required', 'integer', 'min:1'],
             'clip_start_ms' => ['required', 'integer', 'min:0'],
             'clip_end_ms' => ['required', 'integer', 'min:0'],
@@ -179,11 +178,8 @@ class AudioChunkController extends Controller
                 (int) $validated['duration_ms'],
             );
 
-            $transcription = $speechToText->transcribe($segment['path'], [
-                'model_id' => $validated['model_id'] ?? 'scribe_v2',
-                'language_code' => trim((string) ($validated['language_code'] ?? '')) ?: null,
-            ]);
-        } catch (ElevenLabsSpeechToTextException $exception) {
+            $transcription = $speechToText->transcribe($segment['path']);
+        } catch (SpeechToTextException $exception) {
             Log::error('Uploaded audio section transcription failed.', [
                 'message' => $exception->getMessage(),
                 'clip_index' => (int) $validated['clip_index'],
@@ -202,7 +198,7 @@ class AudioChunkController extends Controller
             ]);
 
             return response()->json([
-                'message' => 'Audio section could not be processed.',
+                'message' => ServiceUserMessage::audioPrepareFailed(),
             ], 500);
         }
 
@@ -210,7 +206,7 @@ class AudioChunkController extends Controller
 
         if ($contents === false) {
             return response()->json([
-                'message' => 'Audio section could not be read.',
+                'message' => ServiceUserMessage::audioReadFailed(),
             ], 500);
         }
 

@@ -4,6 +4,7 @@
     "type": "module",
     "scripts": {
         "build": "vite build",
+        "build:tauri": ".\\php\\php.exe artisan app:prepare-tauri-build && vite build",
         "dev": "vite",
         "artisan": ".\\php\\php.exe artisan",
         "composer": ".\\php\\php.exe .\\composer.phar",

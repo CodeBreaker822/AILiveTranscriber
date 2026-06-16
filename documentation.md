@@ -1,6 +1,6 @@
 # AITranscriber Project Documentation
 
-AITranscriber is a Laravel app for recording or uploading audio, transcribing it through ElevenLabs Speech-to-Text, storing each audio section in the database, and optionally producing a cleaned transcript through Gemini.
+AITranscriber is a Laravel app for recording or uploading audio, transcribing it through the selected speech-to-text provider, storing each audio section in the database, and optionally producing a cleaned transcript through Gemini. Supported speech-to-text providers are ElevenLabs and Deepgram.
 
 The app has three user-facing screens:
 
@@ -19,7 +19,7 @@ Defined in `routes/web.php`.
 | GET | `/` | `transcription.live` | Closure returning `welcome` | Live microphone recording screen. |
 | GET | `/upload` | `transcription.upload` | Closure returning `pages.upload` | Long audio upload screen. |
 | GET | `/settings` | `settings.edit` | `SettingsController@edit` | Settings page for SQL-backed provider configuration. |
-| POST | `/settings` | `settings.update` | `SettingsController@update` | Saves the ElevenLabs and Gemini API keys into SQL. |
+| POST | `/settings` | `settings.update` | `SettingsController@update` | Saves provider API keys and the selected main speech-to-text provider into SQL. |
 | GET | `/audio-chunks` | `audio-chunks.index` | `AudioChunkController@index` | Returns stored audio chunks and transcript metadata as JSON. |
 | POST | `/audio-chunks` | `audio-chunks.store` | `AudioChunkController@store` | Stores and transcribes a live clip, or transcribes a prepared upload section when `upload_session_id` is present. |
 | GET | `/audio-chunks/{audioChunk}/audio` | `audio-chunks.audio` | `AudioChunkController@audio` | Streams the stored audio blob for playback. |
@@ -39,7 +39,7 @@ Main persistence and playback controller for individual audio sections.
 - `store()`: handles two modes:
   - Live recording mode, when an uploaded `audio` file is posted directly.
   - Uploaded-section mode, when `upload_session_id` is present and the request should extract a section from an uploaded long file.
-- `storeUploadedSection()`: extracts the requested range from a prepared upload session using `AudioFileChunkerService`, sends the generated WAV to ElevenLabs, then inserts the result into `audio_chunks`.
+- `storeUploadedSection()`: extracts the requested range from a prepared upload session using `AudioFileChunkerService`, sends the generated WAV to the selected speech-to-text provider, then inserts the result into `audio_chunks`.
 - `audio()`: returns the stored binary audio blob with the saved MIME type.
 - `destroy()`: deletes one chunk by id.
 
@@ -59,8 +59,6 @@ Important request fields for upload-section mode:
 - `upload_session_id`
 - `user_id`
 - `category_name`
-- `model_id`
-- `language_code`
 - `clip_index`
 - `clip_start_ms`
 - `clip_end_ms`
@@ -96,10 +94,10 @@ Key behavior:
 
 Manages app-level provider settings.
 
-- `edit()`: prepares all settings page display data, renders provider cards, shows whether ElevenLabs and Gemini API keys are configured, and displays the fixed Gemini model.
-- `update()`: validates and saves the ElevenLabs and Gemini API keys through `AppSettingsService`.
+- `edit()`: prepares all settings page display data, renders provider cards, shows whether ElevenLabs, Deepgram, and Gemini API keys are configured, and displays fixed model values.
+- `update()`: validates and saves provider API keys and the selected main speech-to-text provider through `AppSettingsService`.
 
-The settings page allows users to replace the ElevenLabs and Gemini API keys. ElevenLabs is required for audio transcription. Gemini is optional and is only needed when users want to furnish or clean raw transcript text. The Gemini model is stored in SQL but shown as a read-only value.
+The settings page allows users to replace the ElevenLabs, Deepgram, and Gemini API keys. Either ElevenLabs or Deepgram can be selected as the main speech-to-text provider. Gemini is optional and is only needed when users want to furnish or clean raw transcript text. The Deepgram and Gemini models are stored in SQL but shown as read-only values.
 
 ## Views
 
@@ -164,7 +162,7 @@ Long audio upload interface.
 Major UI areas:
 
 - File picker and upload metadata.
-- Category, model, language, and chunk length controls.
+- Category and chunk length controls.
 - Section queue with Start, Continue, Retry, and Cancel controls.
 - Cleaner progress panel.
 - Transcript preview and raw/clean export controls.
@@ -177,10 +175,12 @@ Provider settings interface.
 
 Major UI areas:
 
+- Main speech-to-text provider selector.
 - ElevenLabs API key input.
+- Deepgram API key input.
 - Gemini API key input.
 - Saved API keys are shown in the inputs after save; they are still encrypted at rest through the model cast.
-- Purpose text for each provider: ElevenLabs handles audio transcription, Gemini handles optional transcript cleanup.
+- Purpose text for each provider: ElevenLabs and Deepgram handle audio transcription, Gemini handles optional transcript cleanup.
 - Provider health cards with Connected, Not connected, or Invalid states.
 - Read-only Gemini model value.
 - Save and test button.
@@ -200,18 +200,18 @@ All page logic is in `resources/js/app.js`.
 3. Browser captures microphone audio with `MediaRecorder`.
 4. The script creates 10-second clip blobs.
 5. Each clip is queued and posted to `POST /audio-chunks`.
-6. The backend sends the clip to ElevenLabs and stores the audio blob, transcript text, timestamps, and metadata.
+6. The backend sends the clip to the selected speech-to-text provider and stores the audio blob, transcript text, timestamps, and metadata.
 7. The frontend refreshes stored rows from `GET /audio-chunks`.
 8. User can play/delete clips, furnish the transcript, and export raw or cleaned text.
 
 ### Upload Page Flow
 
-1. User selects a long audio file, category, model, language, and chunk length.
+1. User selects a long audio file, category, and chunk length.
 2. The frontend estimates duration locally for display.
 3. User starts processing.
 4. `POST /audio-uploads` stores the source file in a temporary session and returns section ranges.
 5. The frontend posts each section to `POST /audio-chunks` with `upload_session_id`.
-6. The backend extracts the requested segment using FFmpeg, transcribes it through ElevenLabs, and stores it in `audio_chunks`.
+6. The backend extracts the requested segment using FFmpeg, transcribes it through the selected speech-to-text provider, and stores it in `audio_chunks`.
 7. The frontend tracks completion, supports continue/retry/cancel, and stores resumable upload state in `localStorage` under `ai-transcriber-upload-session`.
 8. User can request Gemini cleanup and export raw or cleaned transcript text.
 
@@ -261,6 +261,40 @@ The normalized return shape is:
 ]
 ```
 
+### `DeepgramSpeechToTextService`
+
+Wraps Deepgram's pre-recorded Listen API.
+
+Configuration comes from SQL and `config/services.php`:
+
+- `deepgram.api_key` from `app_settings`
+- `deepgram.model` from `app_settings`
+- `DEEPGRAM_LISTEN_URL`
+- `DEEPGRAM_TIMEOUT`
+
+The fixed Deepgram model is `nova-3`.
+
+The normalized return shape matches `ElevenLabsSpeechToTextService`:
+
+```php
+[
+    'text' => 'Transcript text',
+    'timestamps' => [
+        [
+            'text' => 'word',
+            'start' => 0.0,
+            'end' => 0.5,
+            'type' => 'word',
+            'speaker_id' => 'speaker_0',
+        ],
+    ],
+]
+```
+
+### `SpeechToTextService`
+
+Routes transcription requests to either ElevenLabs or Deepgram based on `speech_to_text.provider` in `app_settings`.
+
 ### `GeminiTranscriptCleanerService`
 
 Wraps Gemini `generateContent` for transcript cleanup.
@@ -294,10 +328,16 @@ Responsibilities:
 - Store values through the `AppSetting` model, whose `value` attribute uses Laravel's encrypted cast.
 - Store API keys in SQL:
   - `elevenlabs.api_key`
+  - `deepgram.api_key`
   - `gemini.api_key`
 - Store provider health results in SQL:
   - `elevenlabs.status`
+  - `deepgram.status`
   - `gemini.status`
+- Store the selected speech-to-text provider in SQL:
+  - `speech_to_text.provider`: `elevenlabs` or `deepgram`
+- Keep fixed Deepgram settings in SQL:
+  - `deepgram.model`: `nova-3`
 - Keep fixed Gemini settings in SQL:
   - `gemini.model`: `gemini-3.1-flash-lite`
   - `gemini.timeout`: `30`
@@ -315,6 +355,7 @@ Responsibilities:
 - Treat missing ElevenLabs subscription access as connected when the speech-to-text authentication probe succeeds.
 - Test Gemini with the model list endpoint.
 - Store Gemini model availability.
+- Test Deepgram with the pre-recorded Listen endpoint using an intentionally incomplete request, so the key can authenticate without transcribing audio.
 - Return one of three statuses: `connected`, `not_connected`, or `invalid`.
 - Provider connection tests use a short timeout so the settings save does not feel stuck when a provider is unreachable.
 
@@ -393,6 +434,10 @@ Important keys:
 
 - `elevenlabs.api_key`
 - `elevenlabs.status`
+- `deepgram.api_key`
+- `deepgram.status`
+- `deepgram.model`
+- `speech_to_text.provider`
 - `gemini.api_key`
 - `gemini.status`
 - `gemini.model`
@@ -422,8 +467,10 @@ Useful commands:
 
 Required AI service configuration:
 
-- ElevenLabs API key is configured from the Settings page and stored encrypted in SQL.
+- ElevenLabs and Deepgram API keys are configured from the Settings page and stored encrypted in SQL.
+- The main speech-to-text provider is configured from the Settings page.
 - Gemini API key is configured from the Settings page and stored encrypted in SQL when transcript cleanup is needed.
+- Deepgram model is stored in SQL and fixed to `nova-3`.
 - Gemini model, timeout, and retry values are stored in SQL and fixed to `gemini-3.1-flash-lite`, `30`, and `3`.
 - Saving settings tests configured providers and stores the latest connection status.
 
@@ -432,6 +479,7 @@ Optional service settings:
 ```env
 ELEVENLABS_SPEECH_TO_TEXT_MODEL=scribe_v2
 ELEVENLABS_TIMEOUT=120
+DEEPGRAM_TIMEOUT=120
 GEMINI_RPM_LIMIT=15
 ```
 
@@ -441,6 +489,7 @@ Current focused tests cover:
 
 - `AudioFileChunkerService` segment extraction with bundled FFmpeg.
 - `ElevenLabsSpeechToTextService` request/response normalization and model validation.
+- `DeepgramSpeechToTextService` request/response normalization and model validation.
 - `GeminiTranscriptCleanerService` single transcript and chunked transcript cleanup normalization.
 
 Run with:
@@ -452,7 +501,7 @@ Run with:
 ## Future Modification Notes
 
 - Route URLs are passed to JavaScript through `app-layout.blade.php` body attributes. Update those attributes when adding frontend endpoints.
-- Provider settings are stored in `app_settings`; do not add the ElevenLabs or Gemini API keys back to `.env`.
+- Provider settings are stored in `app_settings`; do not add the ElevenLabs, Deepgram, or Gemini API keys back to `.env`.
 - The live page assumes 10-second recording segments in `resources/js/app.js`.
 - The transcript cleaner assumes 60-second furnishing windows in `TranscriptFurnishController`.
 - Raw and cleaned export behavior is frontend-only; exported files are generated in the browser.

@@ -16,6 +16,7 @@
         @fonts
         <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
         <script src="{{ asset('notification.js') }}"></script>
+        <script src="{{ asset('loader.js') }}"></script>
         @vite(['resources/css/app.css', 'resources/js/app.js'])
     </head>
     <body

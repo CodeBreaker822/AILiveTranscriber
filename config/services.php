@@ -30,6 +30,14 @@ return [
         'timeout' => env('ELEVENLABS_TIMEOUT', 120),
     ],
 
+    'deepgram' => [
+        'key' => null,
+        'listen_url' => env('DEEPGRAM_LISTEN_URL', 'https://api.deepgram.com/v1/listen'),
+        'model' => env('DEEPGRAM_SPEECH_TO_TEXT_MODEL', 'nova-3'),
+        'speech_to_text_models' => ['nova-3', 'nova-2'],
+        'timeout' => env('DEEPGRAM_TIMEOUT', 120),
+    ],
+
     'gemini' => [
         'key' => null,
         'model' => 'gemini-3.1-flash-lite',

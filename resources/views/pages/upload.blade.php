@@ -48,24 +48,6 @@
                         </div>
 
                         <label class="block">
-                            <span class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Model</span>
-                            <select name="model_id" class="mt-2 w-full rounded-lg border border-white/10 bg-slate-950/80 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-300/20">
-                                <option value="scribe_v2">Scribe v2</option>
-                                <option value="scribe_v1">Scribe v1</option>
-                            </select>
-                        </label>
-
-                        <label class="block">
-                            <span class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Language</span>
-                            <select name="language_code" class="mt-2 w-full rounded-lg border border-white/10 bg-slate-950/80 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-300/20">
-                                <option value="">Auto detect</option>
-                                <option value="eng">English</option>
-                                <option value="fil">Filipino</option>
-                                <option value="zho">Chinese</option>
-                            </select>
-                        </label>
-
-                        <label class="block">
                             <span class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Chunk length</span>
                             <select name="chunk_seconds" class="mt-2 w-full rounded-lg border border-white/10 bg-slate-950/80 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-300/20" data-upload-chunk-size>
                                 <option value="60">1 minute</option>

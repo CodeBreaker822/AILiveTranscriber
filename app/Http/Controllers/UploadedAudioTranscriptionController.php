@@ -2,8 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use App\Exceptions\ElevenLabsSpeechToTextException;
+use App\Exceptions\SpeechToTextException;
 use App\Services\AudioFileChunkerService;
+use App\Services\ServiceUserMessage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -38,7 +39,7 @@ class UploadedAudioTranscriptionController extends Controller
                     'count' => count($sections),
                 ],
             ], 201);
-        } catch (ElevenLabsSpeechToTextException $exception) {
+        } catch (SpeechToTextException $exception) {
             Log::error('Audio upload preparation failed during transcription setup.', [
                 'message' => $exception->getMessage(),
             ]);
@@ -53,7 +54,7 @@ class UploadedAudioTranscriptionController extends Controller
             ]);
 
             return response()->json([
-                'message' => 'Audio upload could not be processed.',
+                'message' => ServiceUserMessage::audioPrepareFailed(),
             ], 500);
         }
     }

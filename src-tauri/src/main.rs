@@ -81,8 +81,18 @@ fn ensure_runtime_storage(paths: &LaravelPaths) -> Result<(), String> {
     }
 
     if !paths.database_path.exists() {
-        std::fs::File::create(&paths.database_path)
-            .map_err(|error| format!("failed to create SQLite database: {error}"))?;
+        let bundled_database_path = paths
+            .project_dir
+            .join("database")
+            .join("database.sqlite");
+
+        if bundled_database_path.is_file() {
+            std::fs::copy(&bundled_database_path, &paths.database_path)
+                .map_err(|error| format!("failed to copy bundled SQLite database: {error}"))?;
+        } else {
+            std::fs::File::create(&paths.database_path)
+                .map_err(|error| format!("failed to create SQLite database: {error}"))?;
+        }
     }
 
     for directory in [

@@ -4,29 +4,56 @@ namespace App\Http\Controllers;
 
 use App\Services\AppSettingsService;
 use App\Services\ProviderApiTestService;
+use App\Services\ServiceUserMessage;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class SettingsController extends Controller
 {
+    private const ELEVENLABS_API_KEYS_URL = 'https://elevenlabs.io/app/developers/api-keys';
+
+    private const ELEVENLABS_AUTH_DOCS_URL = 'https://elevenlabs.io/docs/api-reference/authentication';
+
+    private const DEEPGRAM_API_KEYS_URL = 'https://console.deepgram.com/project/keys';
+
+    private const DEEPGRAM_LISTEN_DOCS_URL = 'https://developers.deepgram.com/reference/speech-to-text/listen-pre-recorded';
+
+    private const GEMINI_API_KEYS_URL = 'https://aistudio.google.com/apikey';
+
+    private const GEMINI_API_KEY_DOCS_URL = 'https://ai.google.dev/gemini-api/docs/api-key';
+
     public function edit(AppSettingsService $settings): View
     {
+        $settings->ensureFixedSpeechToTextSettings();
         $settings->ensureFixedGeminiSettings();
 
         $elevenLabsStatus = $settings->providerStatus('elevenlabs');
+        $deepgramStatus = $settings->providerStatus('deepgram');
         $geminiStatus = $settings->providerStatus('gemini');
+        $speechToTextProvider = $settings->speechToTextProvider();
+        $selectedSpeechStatus = $speechToTextProvider === 'deepgram' ? $deepgramStatus : $elevenLabsStatus;
 
         return view('pages.settings', [
             'hasElevenLabsApiKey' => $settings->hasElevenLabsApiKey(),
+            'hasDeepgramApiKey' => $settings->hasDeepgramApiKey(),
             'hasGeminiApiKey' => $settings->hasGeminiApiKey(),
             'elevenLabsApiKey' => $settings->elevenLabsApiKey(),
+            'deepgramApiKey' => $settings->deepgramApiKey(),
             'geminiApiKey' => $settings->geminiApiKey(),
-            'pageStatusLabel' => $elevenLabsStatus['status'] === 'connected' ? 'Ready' : 'Needs ElevenLabs',
+            'speechToTextProvider' => $speechToTextProvider,
+            'apiKeyLinks' => $this->apiKeyLinks(),
+            'pageStatusLabel' => $selectedSpeechStatus['status'] === 'connected'
+                ? 'Ready'
+                : 'Needs '.($speechToTextProvider === 'deepgram' ? 'Deepgram' : 'ElevenLabs'),
             'providers' => [
                 $this->providerCard(
                     'ElevenLabs',
                     $elevenLabsStatus,
+                ),
+                $this->providerCard(
+                    'Deepgram',
+                    $deepgramStatus,
                 ),
                 $this->providerCard(
                     'Gemini',
@@ -34,6 +61,14 @@ class SettingsController extends Controller
                 ),
             ],
             'geminiModel' => $settings->geminiModel(),
+            'deepgramModel' => $settings->deepgramModel(),
+        ]);
+    }
+
+    public function help(): View
+    {
+        return view('pages.api-key-help', [
+            'providers' => $this->apiKeyInstructions(),
         ]);
     }
 
@@ -50,22 +85,27 @@ class SettingsController extends Controller
         }
 
         $validated = $request->validate([
+            'speech_to_text_provider' => ['required', 'in:elevenlabs,deepgram'],
             'elevenlabs_api_key' => ['nullable', 'string', 'max:1000'],
+            'deepgram_api_key' => ['nullable', 'string', 'max:1000'],
             'gemini_api_key' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        $elevenLabsApiKey = trim((string) ($validated['elevenlabs_api_key'] ?? ''));
-        $geminiApiKey = trim((string) ($validated['gemini_api_key'] ?? ''));
+        $settings->setSpeechToTextProvider((string) $validated['speech_to_text_provider']);
 
-        if ($elevenLabsApiKey === '' && $geminiApiKey === '') {
-            return back()
-                ->withErrors(['api_keys' => 'Paste at least one API key to save.'])
-                ->withInput();
-        }
+        $elevenLabsApiKey = trim((string) ($validated['elevenlabs_api_key'] ?? ''));
+        $deepgramApiKey = trim((string) ($validated['deepgram_api_key'] ?? ''));
+        $geminiApiKey = trim((string) ($validated['gemini_api_key'] ?? ''));
 
         if ($elevenLabsApiKey !== '') {
             $settings->setElevenLabsApiKey($elevenLabsApiKey);
         }
+
+        if ($deepgramApiKey !== '') {
+            $settings->setDeepgramApiKey($deepgramApiKey);
+        }
+
+        $settings->ensureFixedSpeechToTextSettings();
 
         if ($geminiApiKey !== '') {
             $settings->setGeminiApiKey($geminiApiKey);
@@ -81,7 +121,19 @@ class SettingsController extends Controller
         } else {
             $settings->setProviderStatus('elevenlabs', [
                 'status' => 'not_connected',
-                'message' => 'ElevenLabs API key is not configured.',
+                'message' => ServiceUserMessage::missingApiKey('ElevenLabs'),
+            ]);
+        }
+
+        if ($settings->hasDeepgramApiKey()) {
+            $settings->setProviderStatus(
+                'deepgram',
+                $tester->testDeepgram($settings->deepgramApiKey() ?? '', $settings->deepgramModel()),
+            );
+        } else {
+            $settings->setProviderStatus('deepgram', [
+                'status' => 'not_connected',
+                'message' => ServiceUserMessage::missingApiKey('Deepgram'),
             ]);
         }
 
@@ -93,7 +145,7 @@ class SettingsController extends Controller
         } else {
             $settings->setProviderStatus('gemini', [
                 'status' => 'not_connected',
-                'message' => 'Gemini API key is not configured.',
+                'message' => ServiceUserMessage::missingApiKey('Gemini'),
             ]);
         }
 
@@ -117,6 +169,81 @@ class SettingsController extends Controller
             'message' => $status['message'] ?? '',
             'checked_at' => $status['checked_at'] ?? null,
             'details' => $this->formatDetails($status['details'] ?? []),
+        ];
+    }
+
+    private function apiKeyLinks(): array
+    {
+        return [
+            'elevenlabs' => [
+                'key_url' => self::ELEVENLABS_API_KEYS_URL,
+                'help_url' => route('settings.api-key-help').'#elevenlabs',
+            ],
+            'deepgram' => [
+                'key_url' => self::DEEPGRAM_API_KEYS_URL,
+                'help_url' => route('settings.api-key-help').'#deepgram',
+            ],
+            'gemini' => [
+                'key_url' => self::GEMINI_API_KEYS_URL,
+                'help_url' => route('settings.api-key-help').'#gemini',
+            ],
+        ];
+    }
+
+    private function apiKeyInstructions(): array
+    {
+        return [
+            [
+                'id' => 'elevenlabs',
+                'name' => 'ElevenLabs',
+                'purpose' => 'Used by AITranscriber to turn uploaded or recorded audio into raw transcript text.',
+                'key_url' => self::ELEVENLABS_API_KEYS_URL,
+                'docs_url' => self::ELEVENLABS_AUTH_DOCS_URL,
+                'steps' => [
+                    'Open the ElevenLabs API keys page and sign in to your ElevenLabs account.',
+                    'Create a new API key from the developer API keys area.',
+                    'Copy the generated key immediately and paste it into the ElevenLabs API key field in AITranscriber.',
+                    'Save the settings so AITranscriber can test the key before transcription.',
+                ],
+                'notes' => [
+                    'ElevenLabs is required for transcription.',
+                    'Keep the key private. It controls access to your ElevenLabs usage quota.',
+                ],
+            ],
+            [
+                'id' => 'deepgram',
+                'name' => 'Deepgram',
+                'purpose' => 'Used by AITranscriber as an alternative provider for turning uploaded or recorded audio into raw transcript text.',
+                'key_url' => self::DEEPGRAM_API_KEYS_URL,
+                'docs_url' => self::DEEPGRAM_LISTEN_DOCS_URL,
+                'steps' => [
+                    'Open the Deepgram API keys page and sign in to your Deepgram account.',
+                    'Create a project API key with speech-to-text access.',
+                    'Copy the generated key and paste it into the Deepgram API key field in AITranscriber.',
+                    'Save the settings and select Deepgram as the main speech-to-text provider when you want new transcripts to use it.',
+                ],
+                'notes' => [
+                    'Deepgram is optional unless selected as the main speech-to-text provider.',
+                    'AITranscriber uses Deepgram Nova-3 for pre-recorded speech-to-text.',
+                ],
+            ],
+            [
+                'id' => 'gemini',
+                'name' => 'Gemini',
+                'purpose' => 'Used by AITranscriber only when you want the raw transcript cleaned or furnished.',
+                'key_url' => self::GEMINI_API_KEYS_URL,
+                'docs_url' => self::GEMINI_API_KEY_DOCS_URL,
+                'steps' => [
+                    'Open Google AI Studio API keys and sign in with your Google account.',
+                    'Create an API key from the API keys page.',
+                    'Copy the generated key and paste it into the Gemini API key field in AITranscriber.',
+                    'Save the settings so AITranscriber can test the key. You may leave Gemini empty if you only need raw transcripts.',
+                ],
+                'notes' => [
+                    'Gemini is optional.',
+                    'The Gemini model is fixed by AITranscriber, so users only need to provide the key.',
+                ],
+            ],
         ];
     }
 

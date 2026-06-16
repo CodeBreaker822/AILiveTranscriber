@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Exceptions\ElevenLabsSpeechToTextException;
 use App\Services\ElevenLabsSpeechToTextService;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -76,7 +77,37 @@ class ElevenLabsSpeechToTextServiceTest extends TestCase
 
         try {
             $this->expectException(ElevenLabsSpeechToTextException::class);
-            $this->expectExceptionMessage('Unsupported ElevenLabs speech-to-text model.');
+            $this->expectExceptionMessage(
+                'The selected ElevenLabs transcription model is not available. Please reopen Settings and try again.',
+            );
+
+            app(ElevenLabsSpeechToTextService::class)->transcribe($audioPath);
+        } finally {
+            @unlink($audioPath);
+        }
+    }
+
+    public function test_it_returns_a_friendly_message_when_elevenlabs_cannot_be_reached(): void
+    {
+        config([
+            'services.elevenlabs.key' => 'test-api-key',
+            'services.elevenlabs.speech_to_text_url' => 'https://api.elevenlabs.io/v1/speech-to-text',
+            'services.elevenlabs.speech_to_text_model' => 'scribe_v2',
+            'services.elevenlabs.speech_to_text_models' => ['scribe_v2', 'scribe_v1'],
+        ]);
+
+        Http::fake(function () {
+            throw new ConnectionException('cURL error 6: Could not resolve host.');
+        });
+
+        $audioPath = tempnam(sys_get_temp_dir(), 'audio-');
+        file_put_contents($audioPath, 'fake audio');
+
+        try {
+            $this->expectException(ElevenLabsSpeechToTextException::class);
+            $this->expectExceptionMessage(
+                'AITranscriber could not reach ElevenLabs. Check your internet connection, then try again.',
+            );
 
             app(ElevenLabsSpeechToTextService::class)->transcribe($audioPath);
         } finally {

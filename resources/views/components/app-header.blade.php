@@ -22,14 +22,11 @@
 <header class="rounded-lg border border-white/10 bg-slate-950/80 px-5 py-4 shadow-[0_18px_60px_rgba(0,0,0,0.32)] backdrop-blur-xl lg:px-7">
     <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <a href="{{ route('transcription.live') }}" class="flex min-w-0 items-center gap-4">
-            <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-cyan-300/20 bg-white/5 text-cyan-200">
-                <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                    <path d="M12 18a4 4 0 0 0 4-4V8a4 4 0 1 0-8 0v6a4 4 0 0 0 4 4Z" />
-                    <path d="M5 11v1a7 7 0 0 0 14 0v-1" />
-                    <path d="M12 18v4" />
-                    <path d="M8 22h8" />
-                </svg>
-            </span>
+            <img
+                src="{{ asset('AILogo.png') }}"
+                alt="AI Transcriber"
+                class="h-16 w-16 shrink-0 rounded-lg object-contain"
+            >
 
             <span class="min-w-0">
                 <span class="block text-2xl font-semibold tracking-tight text-white sm:text-3xl">AI Transcriber</span>

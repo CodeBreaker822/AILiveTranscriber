@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Services\ProviderApiTestService;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -69,5 +70,39 @@ class ProviderApiTestServiceTest extends TestCase
         $this->assertTrue($result['details']['model_available']);
         $this->assertArrayNotHasKey('usage_note', $result['details']);
         $this->assertArrayNotHasKey('test_prompt_tokens', $result['details']);
+    }
+
+    public function test_it_returns_deepgram_connection_details(): void
+    {
+        config([
+            'services.deepgram.listen_url' => 'https://api.deepgram.com/v1/listen',
+        ]);
+
+        Http::fake([
+            'https://api.deepgram.com/v1/listen*' => Http::response([
+                'err_msg' => 'Bad Request',
+            ], 400),
+        ]);
+
+        $result = app(ProviderApiTestService::class)->testDeepgram('test-key', 'nova-3');
+
+        $this->assertSame('connected', $result['status']);
+        $this->assertSame('nova-3', $result['details']['model']);
+    }
+
+    public function test_it_returns_a_friendly_message_when_provider_cannot_be_reached(): void
+    {
+        Http::fake(function () {
+            throw new ConnectionException('cURL error 6: Could not resolve host.');
+        });
+
+        $result = app(ProviderApiTestService::class)->testDeepgram('test-key', 'nova-3');
+
+        $this->assertSame('not_connected', $result['status']);
+        $this->assertSame(
+            'AITranscriber could not reach Deepgram. Check your internet connection, then try again.',
+            $result['message'],
+        );
+        $this->assertArrayNotHasKey('error', $result['details']);
     }
 }

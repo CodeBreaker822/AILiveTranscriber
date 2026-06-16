@@ -26,3 +26,7 @@ Homestead.json
 Homestead.yaml
 Thumbs.db
 /src-tauri
+!/src-tauri/
+/src-tauri/*
+!/src-tauri/icons/
+!/src-tauri/icons/**

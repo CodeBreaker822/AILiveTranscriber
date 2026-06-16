@@ -67,7 +67,7 @@ class AudioFileChunkerService
         ]);
 
         if (! is_file($outputPath)) {
-            throw new RuntimeException('Audio section could not be prepared.');
+            throw new RuntimeException(ServiceUserMessage::audioPrepareFailed());
         }
 
         $preparedDurationMs = max(1, (int) round($this->probeDurationSeconds($outputPath) * 1000));
@@ -144,7 +144,7 @@ class AudioFileChunkerService
             ->values();
 
         if ($files->isEmpty()) {
-            throw new RuntimeException('Audio could not be prepared for transcription.');
+            throw new RuntimeException(ServiceUserMessage::audioPrepareFailed());
         }
 
         $segments = [];
@@ -196,13 +196,13 @@ class AudioFileChunkerService
         $path = $this->sessionDirectory($sessionId).DIRECTORY_SEPARATOR.'session.json';
 
         if (! is_file($path)) {
-            throw new RuntimeException('Upload session was not found.');
+            throw new RuntimeException(ServiceUserMessage::uploadSessionExpired());
         }
 
         $session = json_decode((string) file_get_contents($path), true);
 
         if (! is_array($session) || empty($session['source_path']) || ! is_file($session['source_path'])) {
-            throw new RuntimeException('Upload session source audio was not found.');
+            throw new RuntimeException(ServiceUserMessage::uploadSessionExpired());
         }
 
         return $session;
@@ -236,7 +236,7 @@ class AudioFileChunkerService
         $process->run();
 
         if (! $process->isSuccessful()) {
-            throw new RuntimeException(trim($process->getErrorOutput()) ?: 'Audio processing failed.');
+            throw new RuntimeException(ServiceUserMessage::audioPrepareFailed());
         }
 
         return $process;

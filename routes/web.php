@@ -16,6 +16,7 @@ Route::get('/upload', function () {
 
 Route::get('/settings', [SettingsController::class, 'edit'])->name('settings.edit');
 Route::post('/settings', [SettingsController::class, 'update'])->name('settings.update');
+Route::get('/settings/api-key-help', [SettingsController::class, 'help'])->name('settings.api-key-help');
 Route::get('/audio-chunks', [AudioChunkController::class, 'index'])->name('audio-chunks.index');
 Route::post('/audio-chunks', [AudioChunkController::class, 'store'])->name('audio-chunks.store');
 Route::get('/audio-chunks/{audioChunk}/audio', [AudioChunkController::class, 'audio'])->name('audio-chunks.audio');

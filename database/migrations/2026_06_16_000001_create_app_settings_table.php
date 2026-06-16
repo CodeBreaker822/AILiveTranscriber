@@ -18,6 +18,18 @@ return new class extends Migration
         });
 
         AppSetting::query()->create([
+            'key' => 'speech_to_text.provider',
+            'value' => 'elevenlabs',
+            'is_encrypted' => true,
+        ]);
+
+        AppSetting::query()->create([
+            'key' => 'deepgram.model',
+            'value' => 'nova-3',
+            'is_encrypted' => true,
+        ]);
+
+        AppSetting::query()->create([
             'key' => 'gemini.model',
             'value' => 'gemini-3.1-flash-lite',
             'is_encrypted' => true,

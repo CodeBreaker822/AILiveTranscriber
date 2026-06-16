@@ -793,9 +793,6 @@ $(function () {
                 return;
             }
 
-            const modelId = String($form.find('[name="model_id"]').val() || 'scribe_v2');
-            const languageCode = String($form.find('[name="language_code"]').val() || '').trim();
-
             for (let index = 0; index < preparedSections.length; index += 1) {
                 if (cancelRequested) {
                     break;
@@ -814,10 +811,6 @@ $(function () {
                 formData.append('upload_session_id', sessionId);
                 formData.append('user_id', String(defaultUserId));
                 formData.append('category_name', categoryName);
-                formData.append('model_id', modelId);
-                if (languageCode) {
-                    formData.append('language_code', languageCode);
-                }
                 formData.append('clip_index', String(section.index));
                 formData.append('clip_start_ms', String(section.startMs));
                 formData.append('clip_end_ms', String(section.endMs));
@@ -1214,6 +1207,38 @@ $(function () {
         return;
     }
 
+    if ($body.data('page') === 'settings') {
+        const $speechProviderSelect = $('[data-speech-provider-select]');
+        const $speechProviderPanels = $('[data-speech-provider-panel]');
+        const syncSpeechProviderPanels = () => {
+            const selectedProvider = String($speechProviderSelect.val() || 'elevenlabs');
+
+            $speechProviderPanels.each(function () {
+                const $panel = $(this);
+                const isSelected = String($panel.data('speech-provider-panel') || '') === selectedProvider;
+
+                $panel.toggleClass('hidden', !isSelected);
+                $panel.find('input, select, textarea').prop('disabled', !isSelected);
+            });
+        };
+
+        $speechProviderSelect.on('change', syncSpeechProviderPanels);
+        syncSpeechProviderPanels();
+
+        $('[data-settings-form]').on('submit', function () {
+            const $saveButton = $(this).find('[data-settings-save]');
+
+            if (typeof window.toggleLoading === 'function') {
+                window.toggleLoading($saveButton, true);
+                return;
+            }
+
+            $saveButton.prop('disabled', true);
+        });
+
+        return;
+    }
+
     if ($body.data('page') !== 'live') {
         return;
     }
@@ -1247,7 +1272,7 @@ $(function () {
     const playUrlBase = String($body.data('play-url-base') || '');
     const deleteUrlBase = String($body.data('delete-url-base') || '');
     const defaultUserId = Number($body.data('default-user-id') || 1);
-    const segmentLengthMs = 10000;
+    const segmentLengthMs = 60 * 1000;
     const supportsRecorder = Boolean(navigator.mediaDevices && window.MediaRecorder);
     const csrfToken = $('meta[name="csrf-token"]').attr('content') || '';
 
@@ -1556,7 +1581,7 @@ $(function () {
 
     const getCurrentClipRange = () => {
         if (!sessionStartedAt) {
-            return '00:00-00:10';
+            return '00:00-01:00';
         }
 
         const elapsed = Math.max(0, Date.now() - sessionStartedAt);

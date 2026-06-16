@@ -12,7 +12,7 @@ class ProviderApiTestService
         $apiKey = trim($apiKey);
 
         if ($apiKey === '') {
-            return $this->notConnected('ElevenLabs API key is not configured.');
+            return $this->notConnected(ServiceUserMessage::missingApiKey('ElevenLabs'));
         }
 
         try {
@@ -23,21 +23,19 @@ class ProviderApiTestService
                     'model_id' => config('services.elevenlabs.speech_to_text_model', 'scribe_v2'),
                 ]);
         } catch (Throwable $exception) {
-            return $this->invalid('Could not connect to ElevenLabs.', [
-                'error' => $exception->getMessage(),
-            ]);
+            return $this->notConnected(ServiceUserMessage::cannotReachProvider('ElevenLabs'));
         }
 
         if (in_array($authProbe->status(), [401, 403], true)) {
-            return $this->invalid('ElevenLabs rejected this API key.', [
-                'status_code' => $authProbe->status(),
-            ]);
+            return $this->invalid(ServiceUserMessage::providerRejectedKey('ElevenLabs'));
+        }
+
+        if ($authProbe->status() === 429) {
+            return $this->invalid(ServiceUserMessage::providerBusy('ElevenLabs'));
         }
 
         if ($authProbe->serverError()) {
-            return $this->invalid('ElevenLabs could not verify this API key right now.', [
-                'status_code' => $authProbe->status(),
-            ]);
+            return $this->notConnected(ServiceUserMessage::providerUnavailable('ElevenLabs'));
         }
 
         $subscription = $this->elevenLabsSubscription($apiKey);
@@ -71,7 +69,7 @@ class ProviderApiTestService
         $apiKey = trim($apiKey);
 
         if ($apiKey === '') {
-            return $this->notConnected('Gemini API key is not configured.');
+            return $this->notConnected(ServiceUserMessage::missingApiKey('Gemini'));
         }
 
         $url = rtrim((string) config('services.gemini.base_url'), '/') . '/models?key=' . urlencode($apiKey);
@@ -82,14 +80,11 @@ class ProviderApiTestService
             ])->timeout(10)
                 ->get($url);
         } catch (Throwable $exception) {
-            return $this->invalid('Could not connect to Gemini.', [
-                'error' => $exception->getMessage(),
-            ]);
+            return $this->notConnected(ServiceUserMessage::cannotReachProvider('Gemini'));
         }
 
         if ($response->failed()) {
-            return $this->invalid('Gemini rejected this API key.', [
-                'status_code' => $response->status(),
+            return $this->invalid($this->userMessageForProviderCheckFailure('Gemini', $response->status()), [
                 'model' => $model,
             ]);
         }
@@ -102,6 +97,52 @@ class ProviderApiTestService
         return $this->connected('Gemini API key is connected.', [
             'model' => $model,
             'model_available' => $modelAvailable,
+        ]);
+    }
+
+    public function testDeepgram(string $apiKey, string $model): array
+    {
+        $apiKey = trim($apiKey);
+
+        if ($apiKey === '') {
+            return $this->notConnected(ServiceUserMessage::missingApiKey('Deepgram'));
+        }
+
+        $url = (string) config('services.deepgram.listen_url')
+            .'?'.http_build_query(['model' => $model]);
+
+        try {
+            $authProbe = Http::withHeaders([
+                'Authorization' => 'Token '.$apiKey,
+                'Content-Type' => 'application/json',
+            ])->timeout(10)
+                ->post($url, []);
+        } catch (Throwable $exception) {
+            return $this->notConnected(ServiceUserMessage::cannotReachProvider('Deepgram'), [
+                'model' => $model,
+            ]);
+        }
+
+        if (in_array($authProbe->status(), [401, 403], true)) {
+            return $this->invalid(ServiceUserMessage::providerRejectedKey('Deepgram'), [
+                'model' => $model,
+            ]);
+        }
+
+        if ($authProbe->status() === 429) {
+            return $this->invalid(ServiceUserMessage::providerBusy('Deepgram'), [
+                'model' => $model,
+            ]);
+        }
+
+        if ($authProbe->serverError()) {
+            return $this->notConnected(ServiceUserMessage::providerUnavailable('Deepgram'), [
+                'model' => $model,
+            ]);
+        }
+
+        return $this->connected('Deepgram API key is connected.', [
+            'model' => $model,
         ]);
     }
 
@@ -135,6 +176,16 @@ class ProviderApiTestService
     private function compactDetails(array $details): array
     {
         return array_filter($details, fn ($value): bool => $value !== null && $value !== '');
+    }
+
+    private function userMessageForProviderCheckFailure(string $provider, int $status): string
+    {
+        return match (true) {
+            in_array($status, [401, 403], true) => ServiceUserMessage::providerRejectedKey($provider),
+            $status === 429 => ServiceUserMessage::providerBusy($provider),
+            $status >= 500 => ServiceUserMessage::providerUnavailable($provider),
+            default => "{$provider} could not be tested right now. Please check the saved key and try again.",
+        };
     }
 
     private function elevenLabsSubscription(string $apiKey): array

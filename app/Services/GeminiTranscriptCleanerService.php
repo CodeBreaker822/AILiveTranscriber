@@ -40,7 +40,7 @@ class GeminiTranscriptCleanerService
         $content = $response->json('candidates.0.content.parts.0.text');
 
         if (! is_string($content) || trim($content) === '') {
-            throw new GeminiTranscriptCleanerException('Gemini returned an empty transcript cleaning response.');
+            throw new GeminiTranscriptCleanerException(ServiceUserMessage::emptyCleanerResponse());
         }
 
         return $this->normalizeCleanedTranscript($content, $timestamps);
@@ -81,7 +81,7 @@ class GeminiTranscriptCleanerService
         $content = $response->json('candidates.0.content.parts.0.text');
 
         if (! is_string($content) || trim($content) === '') {
-            throw new GeminiTranscriptCleanerException('Gemini returned an empty transcript cleaning response.');
+            throw new GeminiTranscriptCleanerException(ServiceUserMessage::emptyCleanerResponse());
         }
 
         return $this->normalizeCleanedChunks($content, $chunks);
@@ -116,7 +116,7 @@ class GeminiTranscriptCleanerService
             ?? config('services.gemini.key');
 
         if (! is_string($apiKey) || trim($apiKey) === '') {
-            throw new GeminiTranscriptCleanerException('Gemini API key is not configured.');
+            throw new GeminiTranscriptCleanerException(ServiceUserMessage::missingApiKey('Gemini'));
         }
 
         return trim($apiKey);
@@ -151,7 +151,7 @@ class GeminiTranscriptCleanerService
             ]));
 
             throw new GeminiTranscriptCleanerException(
-                'Gemini request timed out or could not connect.',
+                ServiceUserMessage::cannotReachProvider('Gemini'),
                 0,
                 $exception,
             );
@@ -168,12 +168,8 @@ class GeminiTranscriptCleanerService
                 Cache::put($this->rateLimitKey(), (int) config('services.gemini.rpm_limit', 15), 60);
             }
 
-            $message = $response->json('error.message')
-                ?? $response->json('message')
-                ?? 'Gemini transcript cleaning request failed.';
-
             throw new GeminiTranscriptCleanerException(
-                is_string($message) ? $message : 'Gemini transcript cleaning request failed.',
+                $this->userMessageForFailedResponse($response->status()),
                 $response->status(),
             );
         }
@@ -203,7 +199,7 @@ class GeminiTranscriptCleanerService
         $requests = (int) Cache::get($key, 0);
 
         if ($requests >= $limit) {
-            throw new GeminiTranscriptCleanerException('Transcript cleaner is busy. Please try again in a minute.');
+            throw new GeminiTranscriptCleanerException(ServiceUserMessage::providerBusy('Gemini'));
         }
 
         Cache::put($key, $requests + 1, max(1, 60 - ($now - (int) Cache::get($timeKey, $now))));
@@ -374,7 +370,7 @@ class GeminiTranscriptCleanerService
         $decoded = json_decode($this->stripJsonFence($content), true);
 
         if (! is_array($decoded)) {
-            throw new GeminiTranscriptCleanerException('Gemini transcript cleaning response was not valid JSON.');
+            throw new GeminiTranscriptCleanerException(ServiceUserMessage::invalidCleanerResponse());
         }
 
         $timestamps = is_array($decoded['timestamps'] ?? null)
@@ -405,7 +401,7 @@ class GeminiTranscriptCleanerService
         $decoded = json_decode($this->stripJsonFence($content), true);
 
         if (! is_array($decoded) || ! is_array($decoded['chunks'] ?? null)) {
-            throw new GeminiTranscriptCleanerException('Gemini transcript cleaning response was not valid JSON.');
+            throw new GeminiTranscriptCleanerException(ServiceUserMessage::invalidCleanerResponse());
         }
 
         $sourceIds = array_flip(array_map(fn (array $chunk): int => (int) $chunk['id'], $sourceChunks));
@@ -444,7 +440,7 @@ class GeminiTranscriptCleanerService
 
         foreach ($sourceChunks as $sourceChunk) {
             if (! isset($cleaned[(int) $sourceChunk['id']])) {
-                throw new GeminiTranscriptCleanerException('Gemini did not return every transcript chunk.');
+                throw new GeminiTranscriptCleanerException(ServiceUserMessage::cleanerMissingChunks());
             }
         }
 
@@ -464,5 +460,15 @@ class GeminiTranscriptCleanerService
         }
 
         return trim($content);
+    }
+
+    private function userMessageForFailedResponse(int $status): string
+    {
+        return match (true) {
+            in_array($status, [401, 403], true) => ServiceUserMessage::providerRejectedKey('Gemini'),
+            $status === 429 => ServiceUserMessage::providerBusy('Gemini'),
+            $status >= 500 => ServiceUserMessage::providerUnavailable('Gemini'),
+            default => ServiceUserMessage::cleanerFailed(),
+        };
     }
 }
