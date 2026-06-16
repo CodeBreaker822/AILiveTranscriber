@@ -36,35 +36,35 @@
     },
     "scripts": {
         "setup": [
-            "php/php.exe composer.phar install",
-            "php/php.exe -r \"file_exists('.env') || copy('.env.example', '.env');\"",
-            "php/php.exe artisan key:generate",
-            "php/php.exe artisan migrate --force",
-            "node/npm.cmd install --ignore-scripts",
-            "node/npm.cmd run build"
+            ".\\php\\php.exe .\\composer.phar install",
+            ".\\php\\php.exe -r \"file_exists('.env') || copy('.env.example', '.env');\"",
+            ".\\php\\php.exe artisan key:generate",
+            ".\\php\\php.exe artisan migrate --force",
+            ".\\node\\npm.cmd install --ignore-scripts",
+            ".\\node\\npm.cmd run build"
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
-            "node/npx.cmd concurrently -c \"#93c5fd,#c4b5fd,#fdba74\" \"php/php.exe artisan serve\" \"php/php.exe artisan queue:listen --tries=1\" \"node/npm.cmd run dev\" --names=server,queue,vite"
+            ".\\node\\npx.cmd concurrently -c \"#93c5fd,#c4b5fd,#fdba74\" \".\\php\\php.exe artisan serve\" \".\\php\\php.exe artisan queue:listen --tries=1\" \".\\node\\npm.cmd run dev\" --names=server,queue,vite"
         ],
         "test": [
-            "php/php.exe artisan config:clear --ansi",
-            "php/php.exe artisan test"
+            ".\\php\\php.exe artisan config:clear --ansi",
+            ".\\php\\php.exe artisan test"
         ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
-            "php/php.exe artisan package:discover --ansi"
+            ".\\php\\php.exe artisan package:discover --ansi"
         ],
         "post-update-cmd": [
-            "php/php.exe artisan vendor:publish --tag=laravel-assets --ansi --force"
+            ".\\php\\php.exe artisan vendor:publish --tag=laravel-assets --ansi --force"
         ],
         "post-root-package-install": [
-            "php/php.exe -r \"file_exists('.env') || copy('.env.example', '.env');\""
+            ".\\php\\php.exe -r \"file_exists('.env') || copy('.env.example', '.env');\""
         ],
         "post-create-project-cmd": [
-            "php/php.exe artisan key:generate --ansi",
-            "php/php.exe -r \"file_exists('database/database.sqlite') || touch('database/database.sqlite');\"",
-            "php/php.exe artisan migrate --graceful --ansi"
+            ".\\php\\php.exe artisan key:generate --ansi",
+            ".\\php\\php.exe -r \"file_exists('database/database.sqlite') || touch('database/database.sqlite');\"",
+            ".\\php\\php.exe artisan migrate --graceful --ansi"
         ],
         "pre-package-uninstall": [
             "Illuminate\\Foundation\\ComposerScripts::prePackageUninstall"

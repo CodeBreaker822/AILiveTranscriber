@@ -22,6 +22,25 @@ return [
         'key' => env('RESEND_API_KEY'),
     ],
 
+    'elevenlabs' => [
+        'key' => null,
+        'speech_to_text_url' => env('ELEVENLABS_SPEECH_TO_TEXT_URL', 'https://api.elevenlabs.io/v1/speech-to-text'),
+        'speech_to_text_model' => env('ELEVENLABS_SPEECH_TO_TEXT_MODEL', 'scribe_v2'),
+        'speech_to_text_models' => ['scribe_v2', 'scribe_v1'],
+        'timeout' => env('ELEVENLABS_TIMEOUT', 120),
+    ],
+
+    'gemini' => [
+        'key' => null,
+        'model' => 'gemini-3.1-flash-lite',
+        'base_url' => env('GEMINI_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta'),
+        'generate_content_url' => env('GEMINI_GENERATE_CONTENT_URL', 'https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent'),
+        'timeout' => 30,
+        'max_retries' => 3,
+        'rpm_limit' => env('GEMINI_RPM_LIMIT', 15),
+        'rate_limit_key' => env('GEMINI_RATE_LIMIT_KEY', 'gemini_global_requests_per_minute'),
+    ],
+
     'ses' => [
         'key' => env('AWS_ACCESS_KEY_ID'),
         'secret' => env('AWS_SECRET_ACCESS_KEY'),

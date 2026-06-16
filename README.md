@@ -1,58 +1,59 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+<div align="center">
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
+# AITranscriber
+
+### Capture audio, transcribe speech, and prepare cleaner transcripts.
+
+<p>
+  <img src="https://img.shields.io/badge/Live%20Recording-22d3ee?style=for-the-badge" alt="Live Recording">
+  <img src="https://img.shields.io/badge/Audio%20Upload-34d399?style=for-the-badge" alt="Audio Upload">
+  <img src="https://img.shields.io/badge/Transcript%20Cleanup-fbbf24?style=for-the-badge" alt="Transcript Cleanup">
 </p>
 
-## About Laravel
+</div>
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+---
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## What The Project Is
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+AITranscriber is an audio transcription application that converts speech into written text. It supports both live microphone recording and uploaded audio files, then organizes the result into transcript sections that can be reviewed, cleaned, and exported.
 
-## Learning Laravel
+## What It Is Used For
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+AITranscriber is useful for turning spoken conversations into readable text, especially for:
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+- Meetings
+- Interviews
+- Classes and lectures
+- Discussions
+- Voice notes
+- Recorded sessions that need written documentation
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
+## How To Use It
 
-## Agentic Development
+1. Open settings and save your ElevenLabs API key. Add a Gemini API key only if you want transcript cleanup.
+2. Choose whether to record live audio or upload an existing audio file.
+3. Add a category or session name so the transcript is easier to organize.
+4. Start recording or begin processing the uploaded file.
+5. Review each generated transcript section as it becomes available.
+6. Replay audio sections when needed to verify the transcript.
+7. Use transcript cleanup to produce a more polished version.
+8. Export the raw or cleaned transcript for sharing, storage, or later review.
 
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+## Advantages
 
-```bash
-composer require laravel/boost --dev
+- Handles both live audio and uploaded recordings.
+- Breaks long audio into smaller sections for easier progress tracking.
+- Makes failed or incomplete sections easier to retry.
+- Keeps audio and transcript sections organized by category.
+- Supports raw transcripts for accuracy review and cleaned transcripts for readability.
+- Helps reduce manual transcription work.
+- Makes spoken information easier to search, archive, and share.
 
-php artisan boost:install
-```
+---
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+<div align="center">
 
-## Contributing
+**Record it once. Review it clearly. Export it when ready.**
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
-
-## Code of Conduct
-
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
-
-## Security Vulnerabilities
-
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
-
-## License
-
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+</div>

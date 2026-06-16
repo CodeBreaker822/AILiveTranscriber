@@ -24,6 +24,7 @@ return new class extends Migration
             $table->string('original_name')->nullable();
             $table->unsignedBigInteger('file_size_bytes')->nullable();
             $table->binary('audio_blob');
+            $table->longText('translated_text')->nullable();
             $table->string('status', 32)->default('stored');
             $table->timestamps();
 
