@@ -3,6 +3,7 @@
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
 
 Artisan::command('inspire', function () {
@@ -10,6 +11,19 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Artisan::command('app:prepare-tauri-build', function () {
+    $sqlitePath = database_path('database.sqlite');
+
+    File::ensureDirectoryExists(dirname($sqlitePath));
+
+    if (! File::exists($sqlitePath)) {
+        File::put($sqlitePath, '');
+    }
+
+    Artisan::call('migrate', [
+        '--force' => true,
+        '--no-interaction' => true,
+    ]);
+
     $deletedCleanChunks = 0;
     $deletedAudioChunks = 0;
 

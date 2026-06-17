@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Services\AppSettingsService;
+use App\Services\AudioMemoryService;
 use App\Services\ProviderApiTestService;
 use App\Services\ServiceUserMessage;
+use App\Services\TranscriptMemoryService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -23,7 +25,11 @@ class SettingsController extends Controller
 
     private const GEMINI_API_KEY_DOCS_URL = 'https://ai.google.dev/gemini-api/docs/api-key';
 
-    public function edit(AppSettingsService $settings): View
+    public function edit(
+        AppSettingsService $settings,
+        AudioMemoryService $audioMemory,
+        TranscriptMemoryService $transcriptMemory,
+    ): View
     {
         $settings->ensureFixedSpeechToTextSettings();
         $settings->ensureFixedGeminiSettings();
@@ -62,6 +68,8 @@ class SettingsController extends Controller
             ],
             'geminiModel' => $settings->geminiModel(),
             'deepgramModel' => $settings->deepgramModel(),
+            'audioMemory' => $audioMemory->snapshot(),
+            'transcriptMemory' => $transcriptMemory->snapshot(),
         ]);
     }
 
@@ -252,12 +260,12 @@ class SettingsController extends Controller
         return match ($status) {
             'connected' => [
                 'label' => 'Connected',
-                'classes' => 'border-emerald-300/25 bg-emerald-300/10 text-emerald-100',
+                'classes' => 'border-white/10 bg-white/[0.03] text-slate-100',
                 'dot' => 'bg-emerald-300',
             ],
             'invalid' => [
                 'label' => 'Invalid',
-                'classes' => 'border-rose-400/25 bg-rose-400/10 text-rose-100',
+                'classes' => 'border-white/10 bg-white/[0.03] text-slate-100',
                 'dot' => 'bg-rose-300',
             ],
             default => [

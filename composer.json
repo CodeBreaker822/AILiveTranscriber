@@ -45,7 +45,9 @@
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
-            ".\\node\\npx.cmd concurrently -c \"#93c5fd,#c4b5fd,#fdba74\" \".\\php\\php.exe artisan serve\" \".\\php\\php.exe artisan queue:listen --tries=1\" \".\\node\\npm.cmd run dev\" --names=server,queue,vite"
+            ".\\php\\php.exe scripts\\clear-dev-port.php 8010",
+            ".\\php\\php.exe scripts\\clear-dev-port.php 5173",
+            ".\\node\\npx.cmd concurrently -c \"#93c5fd,#c4b5fd,#fdba74\" \".\\php\\php.exe artisan serve --host=127.0.0.1 --port=8010\" \".\\php\\php.exe artisan queue:listen --tries=1\" \".\\node\\npm.cmd run dev\" --names=server,queue,vite"
         ],
         "test": [
             ".\\php\\php.exe artisan config:clear --ansi",

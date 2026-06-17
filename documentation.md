@@ -20,6 +20,10 @@ Defined in `routes/web.php`.
 | GET | `/upload` | `transcription.upload` | Closure returning `pages.upload` | Long audio upload screen. |
 | GET | `/settings` | `settings.edit` | `SettingsController@edit` | Settings page for SQL-backed provider configuration. |
 | POST | `/settings` | `settings.update` | `SettingsController@update` | Saves provider API keys and the selected main speech-to-text provider into SQL. |
+| POST | `/settings/audio-memory/temporary` | `settings.audio-memory.temporary.clear` | `AudioMemoryController@clearTemporary` | Deletes temporary uploaded source files and generated section files from private storage. |
+| POST | `/settings/audio-memory/stored` | `settings.audio-memory.stored.clear` | `AudioMemoryController@clearStored` | Clears stored audio bytes from existing audio chunk rows. |
+| POST | `/settings/audio-memory/all` | `settings.audio-memory.all.clear` | `AudioMemoryController@clearAll` | Clears temporary upload cache and stored audio bytes in one action. |
+| POST | `/settings/transcript-memory` | `settings.transcript-memory.clear` | `TranscriptMemoryController@clear` | Clears raw transcript text, timestamps, and furnished transcript rows. |
 | GET | `/audio-chunks` | `audio-chunks.index` | `AudioChunkController@index` | Returns stored audio chunks and transcript metadata as JSON. |
 | POST | `/audio-chunks` | `audio-chunks.store` | `AudioChunkController@store` | Stores and transcribes a live clip, or transcribes a prepared upload section when `upload_session_id` is present. |
 | GET | `/audio-chunks/{audioChunk}/audio` | `audio-chunks.audio` | `AudioChunkController@audio` | Streams the stored audio blob for playback. |
@@ -94,10 +98,28 @@ Key behavior:
 
 Manages app-level provider settings.
 
-- `edit()`: prepares all settings page display data, renders provider cards, shows whether ElevenLabs, Deepgram, and Gemini API keys are configured, and displays fixed model values.
+- `edit()`: prepares all settings page display data, renders provider cards, shows whether ElevenLabs, Deepgram, and Gemini API keys are configured, displays fixed model values, and includes the current audio memory snapshot.
 - `update()`: validates and saves provider API keys and the selected main speech-to-text provider through `AppSettingsService`.
 
 The settings page allows users to replace the ElevenLabs, Deepgram, and Gemini API keys. Either ElevenLabs or Deepgram can be selected as the main speech-to-text provider. Gemini is optional and is only needed when users want to furnish or clean raw transcript text. The Deepgram and Gemini models are stored in SQL but shown as read-only values.
+
+### `AudioMemoryController`
+
+Handles cleanup actions from the Settings page.
+
+- `clearTemporary()`: removes temporary upload-session directories under private storage, including uploaded source files and generated WAV sections left by cancelled or completed upload processing.
+- `clearStored()`: clears audio blob bytes from `audio_chunks`, keeping transcript text and record metadata.
+- `clearAll()`: clears both temporary audio cache and stored audio bytes without touching transcript text cleanup.
+
+Both actions redirect back to Settings with a status message showing the amount removed.
+
+### `TranscriptMemoryController`
+
+Handles transcript text cleanup from the Settings page.
+
+- `clear()`: clears `translated_text` and `transcription_timestamps` from `audio_chunks`, and deletes furnished rows from `clean_transcript_chunks`.
+
+The action keeps stored audio records in place.
 
 ## Views
 
@@ -179,6 +201,12 @@ Major UI areas:
 - ElevenLabs API key input.
 - Deepgram API key input.
 - Gemini API key input.
+- Audio memory usage summary.
+- Total audio cleanup.
+- Temporary upload cache cleanup.
+- Stored audio record cleanup.
+- Transcript memory usage summary.
+- Transcript text cleanup.
 - Saved API keys are shown in the inputs after save; they are still encrypted at rest through the model cast.
 - Purpose text for each provider: ElevenLabs and Deepgram handle audio transcription, Gemini handles optional transcript cleanup.
 - Provider health cards with Connected, Not connected, or Invalid states.
@@ -188,6 +216,8 @@ Major UI areas:
 Saving settings tests configured API keys immediately and stores the latest provider health result.
 
 Provider card labels, colors, details, and status formatting are prepared in `SettingsController`; the Blade view should stay presentation-only.
+
+Audio memory values come from `AudioMemoryService`; transcript memory values come from `TranscriptMemoryService`; the Blade view should only render the prepared totals and forms.
 
 ## Client-Side Workflow
 
@@ -344,6 +374,32 @@ Responsibilities:
   - `gemini.max_retries`: `3`
 - Return safe defaults when the settings table is not migrated yet.
 
+### `AudioMemoryService`
+
+Tracks and clears audio storage used by the app.
+
+Responsibilities:
+
+- Count stored audio records in `audio_chunks`.
+- Sum stored audio bytes using `file_size_bytes`.
+- Count and size temporary files under `storage/app/private/audio-upload-sessions`.
+- Count and size legacy temporary files under `storage/app/private/audio-upload-chunks`.
+- Delete temporary upload cache directories safely and recreate the roots.
+- Clear stored audio blob bytes while keeping transcript text and record metadata.
+- Clear all audio data by running temporary cache cleanup and stored audio cleanup together.
+
+### `TranscriptMemoryService`
+
+Tracks and clears transcript text storage used by the app.
+
+Responsibilities:
+
+- Count raw transcript records and text/timestamp bytes in `audio_chunks`.
+- Count furnished transcript records and text/timestamp bytes in `clean_transcript_chunks`.
+- Clear `translated_text` and `transcription_timestamps` from stored audio records.
+- Delete furnished transcript rows from `clean_transcript_chunks`.
+- Keep stored audio records in place when transcript text is cleared.
+
 ### `ProviderApiTestService`
 
 Tests saved provider API keys and returns normalized health data for the settings cards.
@@ -462,7 +518,7 @@ Useful commands:
 .\php\php.exe artisan migrate
 .\php\php.exe artisan test
 .\node\npm.cmd run build
-.\php\php.exe artisan serve --host=127.0.0.1 --port=8000
+.\php\php.exe artisan serve --host=127.0.0.1 --port=8010
 ```
 
 Required AI service configuration:
@@ -502,6 +558,9 @@ Run with:
 
 - Route URLs are passed to JavaScript through `app-layout.blade.php` body attributes. Update those attributes when adding frontend endpoints.
 - Provider settings are stored in `app_settings`; do not add the ElevenLabs, Deepgram, or Gemini API keys back to `.env`.
+- Audio memory controls are server-rendered forms on the Settings page, not JavaScript-driven controls.
+- Temporary upload cache cleanup removes private storage files only.
+- Stored audio cleanup clears audio bytes in `audio_chunks`; transcript text cleanup clears transcript fields and removes `clean_transcript_chunks` rows.
 - The live page assumes 10-second recording segments in `resources/js/app.js`.
 - The transcript cleaner assumes 60-second furnishing windows in `TranscriptFurnishController`.
 - Raw and cleaned export behavior is frontend-only; exported files are generated in the browser.
