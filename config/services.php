@@ -34,6 +34,7 @@ return [
         'key' => null,
         'listen_url' => env('DEEPGRAM_LISTEN_URL', 'https://api.deepgram.com/v1/listen'),
         'model' => env('DEEPGRAM_SPEECH_TO_TEXT_MODEL', 'nova-3'),
+        'language' => env('DEEPGRAM_LANGUAGE', 'multi'),
         'speech_to_text_models' => ['nova-3', 'nova-2'],
         'timeout' => env('DEEPGRAM_TIMEOUT', 120),
     ],

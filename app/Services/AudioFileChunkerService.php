@@ -6,6 +6,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use RuntimeException;
+use SplFileInfo;
 use Symfony\Component\Process\Process;
 
 class AudioFileChunkerService
@@ -34,6 +35,45 @@ class AudioFileChunkerService
             'session_id' => $sessionId,
             'directory' => $workDirectory,
             'source_path' => $sourcePath,
+            'duration_ms' => $durationMs,
+        ];
+    }
+
+    /**
+     * @return array{session_id: string, directory: string, source_path: string, duration_ms: int}
+     */
+    public function createSessionFromPath(string $sourcePath): array
+    {
+        $sourcePath = trim($sourcePath);
+
+        if ($sourcePath === '' || ! is_file($sourcePath)) {
+            throw new RuntimeException(ServiceUserMessage::audioPrepareFailed());
+        }
+
+        $sourceFile = new SplFileInfo($sourcePath);
+        $realPath = $sourceFile->getRealPath();
+
+        if (! is_string($realPath) || ! is_file($realPath)) {
+            throw new RuntimeException(ServiceUserMessage::audioPrepareFailed());
+        }
+
+        $sessionId = (string) Str::uuid();
+        $workDirectory = $this->sessionDirectory($sessionId);
+        File::ensureDirectoryExists($workDirectory);
+
+        $durationMs = max(1, (int) round($this->probeDurationSeconds($realPath) * 1000));
+
+        file_put_contents($workDirectory.DIRECTORY_SEPARATOR.'session.json', json_encode([
+            'source_path' => $realPath,
+            'duration_ms' => $durationMs,
+            'created_at' => now()->toISOString(),
+            'source_mode' => 'local_path',
+        ]));
+
+        return [
+            'session_id' => $sessionId,
+            'directory' => $workDirectory,
+            'source_path' => $realPath,
             'duration_ms' => $durationMs,
         ];
     }

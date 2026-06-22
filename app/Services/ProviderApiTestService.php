@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class ProviderApiTestService
@@ -23,6 +24,8 @@ class ProviderApiTestService
                     'model_id' => config('services.elevenlabs.speech_to_text_model', 'scribe_v2'),
                 ]);
         } catch (Throwable $exception) {
+            $this->logConnectionFailure('ElevenLabs', $exception);
+
             return $this->notConnected(ServiceUserMessage::cannotReachProvider('ElevenLabs'));
         }
 
@@ -80,6 +83,8 @@ class ProviderApiTestService
             ])->timeout(10)
                 ->get($url);
         } catch (Throwable $exception) {
+            $this->logConnectionFailure('Gemini', $exception);
+
             return $this->notConnected(ServiceUserMessage::cannotReachProvider('Gemini'));
         }
 
@@ -118,6 +123,8 @@ class ProviderApiTestService
             ])->timeout(10)
                 ->post($url, []);
         } catch (Throwable $exception) {
+            $this->logConnectionFailure('Deepgram', $exception);
+
             return $this->notConnected(ServiceUserMessage::cannotReachProvider('Deepgram'), [
                 'model' => $model,
             ]);
@@ -206,5 +213,17 @@ class ProviderApiTestService
         $subscription = $response->json();
 
         return is_array($subscription) ? $subscription : [];
+    }
+
+    private function logConnectionFailure(string $provider, Throwable $exception): void
+    {
+        Log::warning("{$provider} API connection test failed.", [
+            'exception' => $exception::class,
+            'message' => $exception->getMessage(),
+            'curl_cainfo' => ini_get('curl.cainfo') ?: null,
+            'openssl_cafile' => ini_get('openssl.cafile') ?: null,
+            'curl_ca_bundle' => getenv('CURL_CA_BUNDLE') ?: null,
+            'ssl_cert_file' => getenv('SSL_CERT_FILE') ?: null,
+        ]);
     }
 }

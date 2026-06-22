@@ -66,7 +66,7 @@ class ServiceUserMessage
 
     public static function uploadSessionExpired(): string
     {
-        return 'This upload session is no longer available. Please upload the audio again.';
+        return 'This upload session is no longer available. Please choose the audio file again.';
     }
 
     public static function unsupportedProviderModel(string $provider): string

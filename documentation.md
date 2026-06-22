@@ -73,9 +73,9 @@ Important request fields for upload-section mode:
 
 Prepares a long uploaded audio file before per-section transcription.
 
-- `store()`: validates `audio_file` and optional `chunk_seconds`, creates a temporary session through `AudioFileChunkerService`, builds section metadata, and returns the session id plus section list.
+- `store()`: validates either `audio_file` or `local_path` plus optional `chunk_seconds`, creates a temporary session through `AudioFileChunkerService`, builds section metadata, and returns the session id plus section list.
 
-Accepted chunk sizes are 60, 120, or 300 seconds. The file size validation currently allows up to `5242880` KB.
+Accepted chunk sizes are 60, 120, or 300 seconds. The upload flow does not enforce an app-level audio file size limit. In Tauri, selected audio is referenced by local path instead of copied through HTTP; if the user deletes or moves the source file before processing finishes, later sections fail.
 
 ### `TranscriptFurnishController`
 
@@ -189,7 +189,7 @@ Major UI areas:
 - Cleaner progress panel.
 - Transcript preview and raw/clean export controls.
 
-The JavaScript posts the original file to `POST /audio-uploads`, receives a session id and planned sections, then posts each section to `POST /audio-chunks` with `upload_session_id`.
+The JavaScript sends either the original browser-selected file or the Tauri-selected local file path to `POST /audio-uploads`, receives a session id and planned sections, then posts each section to `POST /audio-chunks` with `upload_session_id`.
 
 ### `resources/views/pages/settings.blade.php`
 
@@ -239,7 +239,7 @@ All page logic is in `resources/js/app.js`.
 1. User selects a long audio file, category, and chunk length.
 2. The frontend estimates duration locally for display.
 3. User starts processing.
-4. `POST /audio-uploads` stores the source file in a temporary session and returns section ranges.
+4. `POST /audio-uploads` stores the browser-uploaded source file or records the Tauri-selected local source path in a temporary session, then returns section ranges.
 5. The frontend posts each section to `POST /audio-chunks` with `upload_session_id`.
 6. The backend extracts the requested segment using FFmpeg, transcribes it through the selected speech-to-text provider, and stores it in `audio_chunks`.
 7. The frontend tracks completion, supports continue/retry/cancel, and stores resumable upload state in `localStorage` under `ai-transcriber-upload-session`.
@@ -258,6 +258,7 @@ Responsibilities:
 
 - Create upload sessions in `storage/app/private/audio-upload-sessions/{uuid}`.
 - Move uploaded source audio into the session directory.
+- Reference Tauri-selected local source files by path without copying them into app storage.
 - Probe duration with FFprobe.
 - Build section metadata for 60, 120, or 300 second chunks.
 - Extract a specific section as mono 16kHz WAV.
@@ -300,6 +301,7 @@ Configuration comes from SQL and `config/services.php`:
 - `deepgram.api_key` from `app_settings`
 - `deepgram.model` from `app_settings`
 - `DEEPGRAM_LISTEN_URL`
+- `DEEPGRAM_LANGUAGE`
 - `DEEPGRAM_TIMEOUT`
 
 The fixed Deepgram model is `nova-3`.
@@ -519,7 +521,11 @@ Useful commands:
 .\php\php.exe artisan test
 .\node\npm.cmd run build
 .\php\php.exe artisan serve --host=127.0.0.1 --port=8010
+.\node\npm.cmd run tauri:build
+.\node\npm.cmd run tauri:build:empty
 ```
+
+`tauri:build` packages the prepared default database. `tauri:build:empty` creates and packages a fresh migrated database with no API keys, provider settings, transcript rows, audio rows, or other user data.
 
 Required AI service configuration:
 
@@ -536,6 +542,7 @@ Optional service settings:
 ELEVENLABS_SPEECH_TO_TEXT_MODEL=scribe_v2
 ELEVENLABS_TIMEOUT=120
 DEEPGRAM_TIMEOUT=120
+DEEPGRAM_LANGUAGE=multi
 GEMINI_RPM_LIMIT=15
 ```
 

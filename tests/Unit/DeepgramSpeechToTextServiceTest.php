@@ -75,6 +75,48 @@ class DeepgramSpeechToTextServiceTest extends TestCase
         });
     }
 
+    public function test_it_defaults_to_multilingual_detection(): void
+    {
+        config([
+            'services.deepgram.key' => 'test-api-key',
+            'services.deepgram.listen_url' => 'https://api.deepgram.com/v1/listen',
+            'services.deepgram.language' => 'multi',
+            'services.deepgram.speech_to_text_models' => ['nova-3', 'nova-2'],
+        ]);
+
+        Http::fake([
+            'https://api.deepgram.com/v1/listen*' => Http::response([
+                'results' => [
+                    'channels' => [
+                        [
+                            'alternatives' => [
+                                [
+                                    'transcript' => 'Ang pangalan nako si Jerven.',
+                                    'words' => [],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ]),
+        ]);
+
+        $audioPath = tempnam(sys_get_temp_dir(), 'audio-');
+        file_put_contents($audioPath, 'fake audio');
+
+        try {
+            app(DeepgramSpeechToTextService::class)->transcribe($audioPath);
+        } finally {
+            @unlink($audioPath);
+        }
+
+        Http::assertSent(function (Request $request): bool {
+            return str_starts_with($request->url(), 'https://api.deepgram.com/v1/listen?')
+                && str_contains($request->url(), 'model=nova-3')
+                && str_contains($request->url(), 'language=multi');
+        });
+    }
+
     public function test_it_rejects_unsupported_speech_to_text_models(): void
     {
         config([

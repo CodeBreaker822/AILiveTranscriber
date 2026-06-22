@@ -5,7 +5,18 @@
   "windows": [
     "main"
   ],
+  "remote": {
+    "urls": [
+      "http://127.0.0.1:8010",
+      "http://localhost:8010"
+    ]
+  },
   "permissions": [
-    "core:default"
+    "core:default",
+    "dialog:allow-save",
+    "allow-open-external-url",
+    "allow-save-text-export",
+    "allow-save-text-export-with-dialog",
+    "allow-choose-audio-file"
   ]
 }

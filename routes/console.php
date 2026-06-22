@@ -12,6 +12,7 @@ Artisan::command('inspire', function () {
 
 Artisan::command('app:prepare-tauri-build', function () {
     $sqlitePath = database_path('database.sqlite');
+    $sqliteSnapshotPath = base_path('build/tauri/database/database.sqlite');
 
     File::ensureDirectoryExists(dirname($sqlitePath));
 
@@ -39,7 +40,47 @@ Artisan::command('app:prepare-tauri-build', function () {
         DB::statement('VACUUM');
     }
 
+    DB::disconnect();
+
+    File::ensureDirectoryExists(dirname($sqliteSnapshotPath));
+    File::copy($sqlitePath, $sqliteSnapshotPath);
+
     $this->info("Prepared Tauri build database.");
     $this->line("Deleted clean transcript chunks: {$deletedCleanChunks}");
     $this->line("Deleted audio chunks: {$deletedAudioChunks}");
+    $this->line("Bundled SQLite snapshot: {$sqliteSnapshotPath}");
 })->purpose('Remove transcript and audio records before packaging the Tauri app.');
+
+Artisan::command('app:prepare-tauri-empty-build', function () {
+    $sqliteSnapshotPath = base_path('build/tauri/database/database.sqlite');
+
+    File::ensureDirectoryExists(dirname($sqliteSnapshotPath));
+    File::delete($sqliteSnapshotPath);
+    File::put($sqliteSnapshotPath, '');
+
+    config([
+        'database.default' => 'sqlite',
+        'database.connections.sqlite.database' => $sqliteSnapshotPath,
+        'database.connections.sqlite.url' => null,
+    ]);
+
+    DB::purge('sqlite');
+    DB::setDefaultConnection('sqlite');
+
+    Artisan::call('migrate', [
+        '--database' => 'sqlite',
+        '--force' => true,
+        '--no-interaction' => true,
+    ]);
+
+    if (Schema::connection('sqlite')->hasTable('app_settings')) {
+        DB::connection('sqlite')->table('app_settings')->delete();
+    }
+
+    DB::connection('sqlite')->statement('VACUUM');
+    DB::disconnect('sqlite');
+
+    $this->info('Prepared empty Tauri build database.');
+    $this->line("Bundled SQLite snapshot: {$sqliteSnapshotPath}");
+    $this->line('Default API keys included: no');
+})->purpose('Create a migrated Tauri database without default API keys or user data.');

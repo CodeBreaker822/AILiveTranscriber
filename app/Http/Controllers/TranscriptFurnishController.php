@@ -41,8 +41,12 @@ class TranscriptFurnishController extends Controller
 
             if ($windowChunks === []) {
                 return response()->json([
-                    'message' => 'No raw transcript is available for this cleaner batch.',
-                ], 404);
+                    'message' => 'furnished',
+                    'data' => [],
+                    'count' => 0,
+                    'gemini_requests' => $requestCount,
+                    'window_index' => $windowIndex,
+                ]);
             }
 
             try {

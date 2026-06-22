@@ -11,11 +11,14 @@ use Illuminate\Http\Response;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use RuntimeException;
 
 class AudioChunkController extends Controller
 {
     public function index(): JsonResponse
     {
+        $this->deleteNoSpeechRows();
+
         $rows = DB::table('audio_chunks')
             ->select([
                 'id',
@@ -113,6 +116,22 @@ class AudioChunkController extends Controller
             ], 422);
         }
 
+        if ($this->isNoSpeechTranscript($transcription['text'] ?? '')) {
+            return response()->json([
+                'message' => 'skipped',
+                'data' => [
+                    'skipped' => true,
+                    'reason' => 'no_speech_detected',
+                    'source_type' => 'live',
+                    'clip_index' => (int) $validated['clip_index'],
+                    'clip_start_ms' => (int) $validated['clip_start_ms'],
+                    'clip_end_ms' => (int) $validated['clip_end_ms'],
+                    'range_label' => $validated['range_label'],
+                    'duration_ms' => (int) $validated['duration_ms'],
+                ],
+            ]);
+        }
+
         $audioChunkId = DB::table('audio_chunks')->insertGetId([
             'user_id' => $userId,
             'category_name' => $categoryName,
@@ -189,6 +208,16 @@ class AudioChunkController extends Controller
             return response()->json([
                 'message' => $exception->getMessage(),
             ], 422);
+        } catch (RuntimeException $exception) {
+            Log::error('Uploaded audio section could not be prepared.', [
+                'message' => $exception->getMessage(),
+                'clip_index' => (int) $validated['clip_index'],
+                'range_label' => $validated['range_label'],
+            ]);
+
+            return response()->json([
+                'message' => $exception->getMessage(),
+            ], 422);
         } catch (\Throwable $exception) {
             Log::error('Uploaded audio section could not be processed.', [
                 'message' => $exception->getMessage(),
@@ -200,6 +229,24 @@ class AudioChunkController extends Controller
             return response()->json([
                 'message' => ServiceUserMessage::audioPrepareFailed(),
             ], 500);
+        }
+
+        if ($this->isNoSpeechTranscript($transcription['text'] ?? '')) {
+            return response()->json([
+                'message' => 'skipped',
+                'data' => [
+                    'skipped' => true,
+                    'reason' => 'no_speech_detected',
+                    'source_type' => 'upload',
+                    'clip_index' => (int) $validated['clip_index'],
+                    'clip_start_ms' => (int) $validated['clip_start_ms'],
+                    'clip_end_ms' => (int) $validated['clip_end_ms'],
+                    'range_label' => $validated['range_label'],
+                    'duration_ms' => (int) $validated['duration_ms'],
+                    'prepared_duration_ms' => (int) $segment['duration_ms'],
+                    'prepared_file_size_bytes' => (int) $segment['size'],
+                ],
+            ]);
         }
 
         $contents = file_get_contents($segment['path']);
@@ -285,5 +332,25 @@ class AudioChunkController extends Controller
             'message' => 'deleted',
             'id' => $audioChunk,
         ]);
+    }
+
+    private function deleteNoSpeechRows(): void
+    {
+        DB::table('audio_chunks')
+            ->whereNotNull('translated_text')
+            ->where(function ($query): void {
+                $query
+                    ->whereRaw("LOWER(TRIM(translated_text)) = 'no speech detected.'")
+                    ->orWhereRaw("LOWER(TRIM(translated_text)) = 'no speech detected'")
+                    ->orWhereRaw("TRIM(translated_text) = ''");
+            })
+            ->delete();
+    }
+
+    private function isNoSpeechTranscript(?string $text): bool
+    {
+        $normalized = strtolower(trim((string) $text));
+
+        return in_array($normalized, ['', 'no speech detected', 'no speech detected.'], true);
     }
 }

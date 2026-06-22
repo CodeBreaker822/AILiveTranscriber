@@ -19,15 +19,19 @@ class UploadedAudioTranscriptionController extends Controller
         @set_time_limit(0);
 
         $validated = $request->validate([
-            'audio_file' => ['required', 'file', 'max:5242880'],
+            'audio_file' => ['nullable', 'required_without:local_path', 'file'],
+            'local_path' => ['nullable', 'required_without:audio_file', 'string'],
             'chunk_seconds' => ['nullable', 'integer', 'in:60,120,300'],
         ]);
 
         $file = $request->file('audio_file');
+        $localPath = (string) ($validated['local_path'] ?? '');
         $chunkSeconds = (int) ($validated['chunk_seconds'] ?? 60);
 
         try {
-            $session = $chunker->createSession($file);
+            $session = trim($localPath) !== ''
+                ? $chunker->createSessionFromPath($localPath)
+                : $chunker->createSession($file);
             $sections = $chunker->buildSections($session['duration_ms'], $chunkSeconds);
 
             return response()->json([

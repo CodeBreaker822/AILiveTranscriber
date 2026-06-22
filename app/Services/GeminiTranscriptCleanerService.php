@@ -264,13 +264,10 @@ class GeminiTranscriptCleanerService
             'system_instruction' => [
                 'parts' => [
                     [
-                        'text' => implode(' ', [
-                            'You clean speech-to-text transcripts for export.',
-                            'Remove filler words such as uh, um, uhm, ah, and repeated false starts.',
-                            'Fix grammar and punctuation without changing meaning.',
-                            'Preserve the timestamp structure needed for export.',
-                            'Return JSON only with keys text and timestamps.',
-                        ]),
+                        'text' => implode(' ', array_merge(
+                            $this->cleanupInstructions('export'),
+                            ['Return JSON only with keys text and timestamps.'],
+                        )),
                     ],
                 ],
             ],
@@ -307,14 +304,14 @@ class GeminiTranscriptCleanerService
             'system_instruction' => [
                 'parts' => [
                     [
-                        'text' => implode(' ', [
-                            'You clean speech-to-text transcripts for client export.',
-                            'Remove filler words such as uh, um, uhm, ah, and repeated false starts.',
-                            'Fix grammar and punctuation without changing meaning.',
-                            'Clean each chunk independently and keep the same audio_chunk_id values.',
-                            'Do not merge chunks, split chunks, or change timestamps except removing words that were removed from the transcript.',
-                            'Return JSON only with one key: chunks.',
-                        ]),
+                        'text' => implode(' ', array_merge(
+                            $this->cleanupInstructions('client export'),
+                            [
+                                'Clean each chunk independently and keep the same audio_chunk_id values.',
+                                'Do not merge chunks, split chunks, or change timestamps except removing words that were removed from the transcript.',
+                                'Return JSON only with one key: chunks.',
+                            ],
+                        )),
                     ],
                 ],
             ],
@@ -359,6 +356,24 @@ class GeminiTranscriptCleanerService
             'generationConfig' => [
                 'temperature' => $options['temperature'] ?? 0.2,
             ],
+        ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function cleanupInstructions(string $purpose): array
+    {
+        return [
+            "You clean speech-to-text transcripts for {$purpose}.",
+            'The speaker may code-switch between English, Cebuano/Bisaya, Filipino/Tagalog, and government-office terms.',
+            'Repair obvious speech-to-text spelling errors, broken words, missing spaces, and phonetic mistakes in Cebuano/Bisaya/Filipino when the intended word is clear from context.',
+            'Preserve the original language mix; do not translate Cebuano/Bisaya/Filipino words into English.',
+            'Keep names, titles, agencies, places, and official terms readable with proper capitalization, such as DILG, Sangguniang, board member, council, and province names.',
+            'Remove filler words such as uh, um, uhm, ah, I mean, and repeated false starts when removing them does not change the meaning.',
+            'Fix grammar, punctuation, casing, and sentence boundaries without changing meaning.',
+            'If a broken local-language word is uncertain, keep it close to the source instead of inventing a new meaning.',
+            'Preserve the timestamp structure needed for export.',
         ];
     }
 

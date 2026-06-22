@@ -15,15 +15,9 @@ class SettingsController extends Controller
 {
     private const ELEVENLABS_API_KEYS_URL = 'https://elevenlabs.io/app/developers/api-keys';
 
-    private const ELEVENLABS_AUTH_DOCS_URL = 'https://elevenlabs.io/docs/api-reference/authentication';
-
     private const DEEPGRAM_API_KEYS_URL = 'https://console.deepgram.com/project/keys';
 
-    private const DEEPGRAM_LISTEN_DOCS_URL = 'https://developers.deepgram.com/reference/speech-to-text/listen-pre-recorded';
-
     private const GEMINI_API_KEYS_URL = 'https://aistudio.google.com/apikey';
-
-    private const GEMINI_API_KEY_DOCS_URL = 'https://ai.google.dev/gemini-api/docs/api-key';
 
     public function edit(
         AppSettingsService $settings,
@@ -122,7 +116,8 @@ class SettingsController extends Controller
         $settings->ensureFixedGeminiSettings();
 
         if ($settings->hasElevenLabsApiKey()) {
-            $settings->setProviderStatus(
+            $this->setProviderStatusWithoutPoisoningConnection(
+                $settings,
                 'elevenlabs',
                 $tester->testElevenLabs($settings->elevenLabsApiKey() ?? ''),
             );
@@ -134,7 +129,8 @@ class SettingsController extends Controller
         }
 
         if ($settings->hasDeepgramApiKey()) {
-            $settings->setProviderStatus(
+            $this->setProviderStatusWithoutPoisoningConnection(
+                $settings,
                 'deepgram',
                 $tester->testDeepgram($settings->deepgramApiKey() ?? '', $settings->deepgramModel()),
             );
@@ -146,7 +142,8 @@ class SettingsController extends Controller
         }
 
         if ($settings->hasGeminiApiKey()) {
-            $settings->setProviderStatus(
+            $this->setProviderStatusWithoutPoisoningConnection(
+                $settings,
                 'gemini',
                 $tester->testGemini($settings->geminiApiKey() ?? '', $settings->geminiModel()),
             );
@@ -160,6 +157,25 @@ class SettingsController extends Controller
         return redirect()
             ->route('settings.edit')
             ->with('status', 'API settings saved and tested.');
+    }
+
+    private function setProviderStatusWithoutPoisoningConnection(
+        AppSettingsService $settings,
+        string $provider,
+        array $status,
+    ): void {
+        $previousStatus = $settings->providerStatus($provider);
+        $message = (string) ($status['message'] ?? '');
+
+        if (
+            ($previousStatus['status'] ?? null) === 'connected'
+            && ($status['status'] ?? null) === 'not_connected'
+            && str_contains($message, 'could not reach')
+        ) {
+            return;
+        }
+
+        $settings->setProviderStatus($provider, $status);
     }
 
     private function providerCard(string $name, array $status): array
@@ -204,52 +220,34 @@ class SettingsController extends Controller
             [
                 'id' => 'elevenlabs',
                 'name' => 'ElevenLabs',
-                'purpose' => 'Used by AITranscriber to turn uploaded or recorded audio into raw transcript text.',
                 'key_url' => self::ELEVENLABS_API_KEYS_URL,
-                'docs_url' => self::ELEVENLABS_AUTH_DOCS_URL,
                 'steps' => [
-                    'Open the ElevenLabs API keys page and sign in to your ElevenLabs account.',
-                    'Create a new API key from the developer API keys area.',
-                    'Copy the generated key immediately and paste it into the ElevenLabs API key field in AITranscriber.',
-                    'Save the settings so AITranscriber can test the key before transcription.',
-                ],
-                'notes' => [
-                    'ElevenLabs is required for transcription.',
-                    'Keep the key private. It controls access to your ElevenLabs usage quota.',
+                    'Open the ElevenLabs key page and sign in or create an account.',
+                    'Select Create API Key and give the key a name you will recognize.',
+                    'Copy the new key and return to AITranscriber Settings.',
+                    'Paste it into the ElevenLabs API key field, then select Save and test.',
                 ],
             ],
             [
                 'id' => 'deepgram',
                 'name' => 'Deepgram',
-                'purpose' => 'Used by AITranscriber as an alternative provider for turning uploaded or recorded audio into raw transcript text.',
                 'key_url' => self::DEEPGRAM_API_KEYS_URL,
-                'docs_url' => self::DEEPGRAM_LISTEN_DOCS_URL,
                 'steps' => [
-                    'Open the Deepgram API keys page and sign in to your Deepgram account.',
-                    'Create a project API key with speech-to-text access.',
-                    'Copy the generated key and paste it into the Deepgram API key field in AITranscriber.',
-                    'Save the settings and select Deepgram as the main speech-to-text provider when you want new transcripts to use it.',
-                ],
-                'notes' => [
-                    'Deepgram is optional unless selected as the main speech-to-text provider.',
-                    'AITranscriber uses Deepgram Nova-3 for pre-recorded speech-to-text.',
+                    'Open the Deepgram key page and sign in or create an account.',
+                    'Choose a project, then select Create a New API Key.',
+                    'Copy the new key and return to AITranscriber Settings.',
+                    'Paste it into the Deepgram API key field, then select Save and test.',
                 ],
             ],
             [
                 'id' => 'gemini',
                 'name' => 'Gemini',
-                'purpose' => 'Used by AITranscriber only when you want the raw transcript cleaned or furnished.',
                 'key_url' => self::GEMINI_API_KEYS_URL,
-                'docs_url' => self::GEMINI_API_KEY_DOCS_URL,
                 'steps' => [
-                    'Open Google AI Studio API keys and sign in with your Google account.',
-                    'Create an API key from the API keys page.',
-                    'Copy the generated key and paste it into the Gemini API key field in AITranscriber.',
-                    'Save the settings so AITranscriber can test the key. You may leave Gemini empty if you only need raw transcripts.',
-                ],
-                'notes' => [
-                    'Gemini is optional.',
-                    'The Gemini model is fixed by AITranscriber, so users only need to provide the key.',
+                    'Open the Google AI Studio key page and sign in with your Google account.',
+                    'Select Create API key and choose a Google Cloud project when prompted.',
+                    'Copy the new key and return to AITranscriber Settings.',
+                    'Paste it into the Gemini API key field, then select Save and test.',
                 ],
             ],
         ];

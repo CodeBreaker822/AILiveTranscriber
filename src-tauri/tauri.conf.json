@@ -1,15 +1,16 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "AITranscriber APP",
-  "version": "0.1.0",
+  "version": "1.0.0-stable-noKey",
   "identifier": "com.jerven.laravel-ai-transcriber",
   "build": {
-    "beforeDevCommand": ".\\php\\php.exe artisan serve --host=127.0.0.1 --port=8010",
+    "beforeDevCommand": ".\\php\\php.exe scripts\\clear-dev-port.php 8010 && .\\php\\php.exe artisan serve --host=127.0.0.1 --port=8010",
     "beforeBuildCommand": ".\\node\\npm.cmd run build:tauri",
     "devUrl": "http://127.0.0.1:8010",
     "frontendDist": "../public"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "AITranscriber",
@@ -43,7 +44,7 @@
       "../app": "app",
       "../bootstrap": "bootstrap",
       "../config": "config",
-      "../database/database.sqlite": "database/database.sqlite",
+      "../build/tauri/database/database.sqlite": "database/database.sqlite",
       "../database/factories": "database/factories",
       "../database/migrations": "database/migrations",
       "../database/seeders": "database/seeders",

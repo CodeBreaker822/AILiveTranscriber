@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use serde::Serialize;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -9,6 +10,7 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 use tauri::{Manager, State};
+use tauri_plugin_dialog::DialogExt;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -28,6 +30,13 @@ struct LaravelPaths {
     database_path: PathBuf,
     storage_path: PathBuf,
     startup_log_path: PathBuf,
+}
+
+#[derive(Serialize)]
+struct AudioFileSelection {
+    path: String,
+    name: String,
+    size: u64,
 }
 
 fn bundled_project_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
@@ -162,16 +171,40 @@ fn append_startup_log(paths: &LaravelPaths, message: &str) {
 
 fn laravel_command(php_path: PathBuf, artisan_path: PathBuf, paths: &LaravelPaths) -> Command {
     let mut command = Command::new(php_path);
+    let php_dir = paths.project_dir.join("php");
+    let ca_bundle_path = php_dir.join("extras").join("ssl").join("cacert.pem");
+    let php_dir_env = env_path(&php_dir);
+    let ca_bundle_env = env_path(&ca_bundle_path);
+    let database_env = env_path(&paths.database_path);
+    let storage_env = env_path(&paths.storage_path);
 
     command
         .arg(artisan_path)
         .current_dir(&paths.project_dir)
-        .env("DB_DATABASE", &paths.database_path)
-        .env("APP_STORAGE_PATH", &paths.storage_path)
+        .env("PHPRC", php_dir_env)
+        .env("PHP_INI_SCAN_DIR", "")
+        .env("CURL_CA_BUNDLE", ca_bundle_env.clone())
+        .env("SSL_CERT_FILE", ca_bundle_env)
+        .env("DB_DATABASE", database_env)
+        .env("APP_STORAGE_PATH", storage_env)
         .env("APP_ENV", "production")
         .env("APP_DEBUG", "false");
 
     command
+}
+
+fn env_path(path: &std::path::Path) -> String {
+    let path = path.display().to_string();
+
+    #[cfg(windows)]
+    {
+        path.strip_prefix(r"\\?\").unwrap_or(&path).to_string()
+    }
+
+    #[cfg(not(windows))]
+    {
+        path
+    }
 }
 
 fn run_migrations(
@@ -528,9 +561,150 @@ fn bootstrap_laravel(app: &tauri::AppHandle) -> Result<(), String> {
     wait_for_laravel(&paths)
 }
 
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    let url = url.trim().to_string();
+
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err("Only http and https links can be opened externally.".to_string());
+    }
+
+    if url.chars().any(char::is_control) {
+        return Err("The external link is not valid.".to_string());
+    }
+
+    #[cfg(windows)]
+    {
+        let mut command = Command::new("rundll32");
+        command.args(["url.dll,FileProtocolHandler", &url]);
+        command.creation_flags(CREATE_NO_WINDOW);
+        command
+            .spawn()
+            .map_err(|error| format!("failed to open external link: {error}"))?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(&url)
+            .spawn()
+            .map_err(|error| format!("failed to open external link: {error}"))?;
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        Command::new("xdg-open")
+            .arg(&url)
+            .spawn()
+            .map_err(|error| format!("failed to open external link: {error}"))?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn save_text_export(
+    app: tauri::AppHandle,
+    _filename: Option<String>,
+    content: String,
+) -> Result<Option<String>, String> {
+    save_text_export_content(&app, content)
+}
+
+#[tauri::command]
+fn save_text_export_with_dialog(
+    app: tauri::AppHandle,
+    content: String,
+) -> Result<Option<String>, String> {
+    save_text_export_content(&app, content)
+}
+
+fn save_text_export_content(
+    app: &tauri::AppHandle,
+    content: String,
+) -> Result<Option<String>, String> {
+    let Some(export_path) = choose_text_export_path(app)? else {
+        return Ok(None);
+    };
+
+    std::fs::write(&export_path, content.as_bytes())
+        .map_err(|error| format!("failed to save transcript export: {error}"))?;
+
+    Ok(Some(export_path.display().to_string()))
+}
+
+fn choose_text_export_path(app: &tauri::AppHandle) -> Result<Option<PathBuf>, String> {
+    let Some(file_path) = app
+        .dialog()
+        .file()
+        .set_title("Save transcript export")
+        .add_filter("Text files", &["txt"])
+        .blocking_save_file()
+    else {
+        return Ok(None);
+    };
+
+    let mut path = file_path
+        .into_path()
+        .map_err(|error| format!("failed to read selected export path: {error}"))?;
+
+    if path.extension().is_none() {
+        path.set_extension("txt");
+    }
+
+    Ok(Some(path))
+}
+
+#[tauri::command]
+fn choose_audio_file(app: tauri::AppHandle) -> Result<Option<AudioFileSelection>, String> {
+    let Some(file_path) = app
+        .dialog()
+        .file()
+        .set_title("Choose audio file")
+        .add_filter(
+            "Audio files",
+            &[
+                "wav", "mp3", "m4a", "aac", "ogg", "oga", "flac", "webm", "wma", "mp4",
+            ],
+        )
+        .blocking_pick_file()
+    else {
+        return Ok(None);
+    };
+
+    let path = file_path
+        .into_path()
+        .map_err(|error| format!("failed to read selected audio path: {error}"))?;
+    let metadata = std::fs::metadata(&path)
+        .map_err(|error| format!("failed to inspect selected audio file: {error}"))?;
+
+    if !metadata.is_file() {
+        return Err("Choose a valid audio file.".to_string());
+    }
+
+    let name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("audio")
+        .to_string();
+
+    Ok(Some(AudioFileSelection {
+        path: env_path(&path),
+        name,
+        size: metadata.len(),
+    }))
+}
+
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(LaravelServer(Mutex::new(None)))
+        .invoke_handler(tauri::generate_handler![
+            open_external_url,
+            save_text_export,
+            save_text_export_with_dialog,
+            choose_audio_file
+        ])
         .setup(|app| {
             let handle = app.handle().clone();
 

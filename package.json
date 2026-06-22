@@ -5,6 +5,7 @@
     "scripts": {
         "build": "vite build",
         "build:tauri": ".\\php\\php.exe artisan app:prepare-tauri-build && vite build",
+        "build:tauri:empty": ".\\php\\php.exe artisan app:prepare-tauri-empty-build && vite build",
         "dev": "vite",
         "artisan": ".\\php\\php.exe artisan",
         "composer": ".\\php\\php.exe .\\composer.phar",
@@ -15,7 +16,8 @@
         "runtime:npm": ".\\node\\npm.cmd -v",
         "runtime:php": ".\\php\\php.exe -v",
         "tauri:dev": "tauri dev",
-        "tauri:build": "tauri build"
+        "tauri:build": "tauri build",
+        "tauri:build:empty": "tauri build --config tauri.empty.conf.json"
     },
     "devDependencies": {
         "@tailwindcss/vite": "^4.0.0",

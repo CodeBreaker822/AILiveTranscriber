@@ -124,7 +124,9 @@ class DeepgramSpeechToTextService
             'diarize' => 'true',
         ];
 
-        $languageCode = $this->normalizeLanguageCode($options['language_code'] ?? null);
+        $languageCode = $this->normalizeLanguageCode(
+            $options['language_code'] ?? config('services.deepgram.language', 'multi')
+        );
 
         if ($languageCode !== null) {
             $query['language'] = $languageCode;
@@ -178,9 +180,11 @@ class DeepgramSpeechToTextService
             return null;
         }
 
-        return match ($languageCode) {
+        return match (strtolower($languageCode)) {
             'eng' => 'en',
             'zho' => 'zh',
+            'fil', 'tgl', 'tagalog' => 'tl',
+            'multi', 'multilingual' => 'multi',
             default => $languageCode,
         };
     }
