@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "AITranscriber APP",
-  "version": "1.0.0-stable-noKey",
+  "version": "2.0.0-stable",
   "identifier": "com.jerven.laravel-ai-transcriber",
   "build": {
     "beforeDevCommand": ".\\php\\php.exe scripts\\clear-dev-port.php 8010 && .\\php\\php.exe artisan serve --host=127.0.0.1 --port=8010",

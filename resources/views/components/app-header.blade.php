@@ -19,18 +19,31 @@
     ];
 @endphp
 
-<header class="rounded-lg border border-white/10 bg-slate-950/80 px-5 py-4 shadow-[0_18px_60px_rgba(0,0,0,0.32)] backdrop-blur-xl lg:px-7">
-    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <a href="{{ route('transcription.live') }}" class="flex min-w-0 items-center gap-4">
-            <img
-                src="{{ asset('AILogo.png') }}"
-                alt="AI Transcriber"
-                class="h-16 w-16 shrink-0 rounded-lg object-contain"
-            >
+<header class="shrink-0 rounded-lg border border-white/10 bg-slate-950/80 px-4 py-3 shadow-[0_18px_60px_rgba(0,0,0,0.32)] backdrop-blur-xl">
+    <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <a href="{{ route('transcription.live') }}" class="flex min-w-0 items-center gap-3">
+            <span class="flex shrink-0 items-center gap-2">
+                <img
+                    src="{{ asset('DILG-Logo.png') }}"
+                    alt="Department of the Interior and Local Government"
+                    class="h-11 w-11 object-contain sm:h-12 sm:w-12"
+                >
+                <img
+                    src="{{ asset('AgSUR-Brand-Logo.png') }}"
+                    alt="Department of the Interior and Local Government"
+                    class="h-11 w-11 object-contain sm:h-12 sm:w-12"
+                >
+                <img
+                    src="{{ asset('AILogo.png') }}"
+                    alt="AI Transcriber"
+                    class="h-11 w-11 rounded-lg object-contain sm:h-12 sm:w-12"
+                >
+            </span>
 
             <span class="min-w-0">
-                <span class="block text-2xl font-semibold tracking-tight text-white sm:text-3xl">AI Transcriber</span>
-                <span class="mt-1 block text-sm text-slate-400">Capture live speech or prepare long audio files.</span>
+                <span class="block text-xl font-semibold tracking-tight text-white sm:text-2xl">ASTRA</span>
+                <span class="mt-0.5 hidden text-xs text-slate-400 sm:block">Agusan del Sur Transcription and Recording Assistant
+                Empower Smarter Governance Through Digital Documentation.</span>
             </span>
         </a>
 
@@ -71,7 +84,7 @@
                 aria-label="Settings"
                 title="Settings"
                 aria-current="{{ $activePage === 'settings' ? 'page' : 'false' }}"
-                class="grid h-12 w-12 shrink-0 place-items-center rounded-lg border border-white/10 transition {{ $activePage === 'settings' ? 'bg-cyan-300 text-slate-950 shadow-[0_10px_30px_rgba(103,232,249,0.16)]' : 'bg-white/[0.03] text-slate-300 hover:bg-white/8 hover:text-white' }}"
+                class="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-white/10 transition {{ $activePage === 'settings' ? 'bg-cyan-300 text-slate-950 shadow-[0_10px_30px_rgba(103,232,249,0.16)]' : 'bg-white/[0.03] text-slate-300 hover:bg-white/8 hover:text-white' }}"
             >
                 <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                     <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />

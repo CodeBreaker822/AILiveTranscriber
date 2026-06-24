@@ -29,6 +29,10 @@ function toggleLoading(button, isLoading) {
 $(document).ready(function() {
     // Global AJAX error handling
     $(document).ajaxError(function(event, xhr, settings, error) {
+        if (error === 'abort' || xhr.statusText === 'abort' || xhr.readyState === 0) {
+            return;
+        }
+
         if (xhr.responseJSON && xhr.responseJSON.errors) {
             const errors = Object.values(xhr.responseJSON.errors).flat();
             errors.forEach(error => showNotification(error, 'error'));

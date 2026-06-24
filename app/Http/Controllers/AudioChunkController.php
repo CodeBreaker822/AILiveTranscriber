@@ -88,27 +88,47 @@ class AudioChunkController extends Controller
             'clip_end_ms' => ['required', 'integer', 'min:0'],
             'range_label' => ['required', 'string', 'max:32'],
             'duration_ms' => ['required', 'integer', 'min:1'],
+            'language_code' => ['nullable', 'string', 'max:32'],
         ]);
-
-        $file = $request->file('audio');
-        $contents = file_get_contents($file->getRealPath());
-
-        if ($contents === false) {
-            return response()->json([
-                'message' => ServiceUserMessage::audioReadFailed(),
-            ], 500);
-        }
 
         $userId = (int) ($validated['user_id'] ?? 1);
         $categoryName = trim((string) $validated['category_name']);
+        $file = $request->file('audio');
+        $preparedClip = null;
 
         try {
-            $transcription = $speechToText->transcribe($file);
+            $preparedClip = $chunker->prepareLiveClip($file, (int) $validated['clip_index']);
+            $transcription = $speechToText->transcribe($preparedClip['path'], [
+                'language_code' => $validated['language_code'] ?? 'multi',
+                'clip_index' => (int) $validated['clip_index'],
+                'clip_start_ms' => (int) $validated['clip_start_ms'],
+                'clip_end_ms' => (int) $validated['clip_end_ms'],
+            ]);
         } catch (SpeechToTextException $exception) {
+            if (is_array($preparedClip) && isset($preparedClip['directory'])) {
+                $chunker->cleanup((string) $preparedClip['directory']);
+            }
+
             Log::error('Live audio chunk transcription failed.', [
                 'message' => $exception->getMessage(),
                 'clip_index' => (int) $validated['clip_index'],
                 'range_label' => $validated['range_label'],
+                'language_code' => $validated['language_code'] ?? 'multi',
+            ]);
+
+            return response()->json([
+                'message' => $exception->getMessage(),
+            ], 422);
+        } catch (RuntimeException $exception) {
+            if (is_array($preparedClip) && isset($preparedClip['directory'])) {
+                $chunker->cleanup((string) $preparedClip['directory']);
+            }
+
+            Log::error('Live audio chunk could not be prepared.', [
+                'message' => $exception->getMessage(),
+                'clip_index' => (int) $validated['clip_index'],
+                'range_label' => $validated['range_label'],
+                'language_code' => $validated['language_code'] ?? 'multi',
             ]);
 
             return response()->json([
@@ -117,6 +137,10 @@ class AudioChunkController extends Controller
         }
 
         if ($this->isNoSpeechTranscript($transcription['text'] ?? '')) {
+            if (is_array($preparedClip) && isset($preparedClip['directory'])) {
+                $chunker->cleanup((string) $preparedClip['directory']);
+            }
+
             return response()->json([
                 'message' => 'skipped',
                 'data' => [
@@ -132,6 +156,18 @@ class AudioChunkController extends Controller
             ]);
         }
 
+        $contents = is_array($preparedClip) ? file_get_contents($preparedClip['path']) : false;
+
+        if ($contents === false) {
+            if (is_array($preparedClip) && isset($preparedClip['directory'])) {
+                $chunker->cleanup((string) $preparedClip['directory']);
+            }
+
+            return response()->json([
+                'message' => ServiceUserMessage::audioReadFailed(),
+            ], 500);
+        }
+
         $audioChunkId = DB::table('audio_chunks')->insertGetId([
             'user_id' => $userId,
             'category_name' => $categoryName,
@@ -140,9 +176,9 @@ class AudioChunkController extends Controller
             'clip_end_ms' => (int) $validated['clip_end_ms'],
             'range_label' => $validated['range_label'],
             'duration_ms' => (int) $validated['duration_ms'],
-            'mime_type' => $file->getMimeType(),
-            'original_name' => $file->getClientOriginalName(),
-            'file_size_bytes' => $file->getSize(),
+            'mime_type' => $preparedClip['mime_type'],
+            'original_name' => $preparedClip['name'],
+            'file_size_bytes' => $preparedClip['size'],
             'audio_blob' => $contents,
             'translated_text' => $transcription['text'],
             'transcription_timestamps' => json_encode($transcription['timestamps']),
@@ -150,6 +186,10 @@ class AudioChunkController extends Controller
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+
+        if (is_array($preparedClip) && isset($preparedClip['directory'])) {
+            $chunker->cleanup((string) $preparedClip['directory']);
+        }
 
         return response()->json([
             'message' => 'saved',
@@ -187,6 +227,7 @@ class AudioChunkController extends Controller
             'clip_end_ms' => ['required', 'integer', 'min:0'],
             'range_label' => ['required', 'string', 'max:32'],
             'duration_ms' => ['required', 'integer', 'min:1'],
+            'language_code' => ['nullable', 'string', 'max:32'],
         ]);
 
         try {
@@ -197,12 +238,18 @@ class AudioChunkController extends Controller
                 (int) $validated['duration_ms'],
             );
 
-            $transcription = $speechToText->transcribe($segment['path']);
+            $transcription = $speechToText->transcribe($segment['path'], [
+                'language_code' => $validated['language_code'] ?? 'multi',
+                'clip_index' => (int) $validated['clip_index'],
+                'clip_start_ms' => (int) $validated['clip_start_ms'],
+                'clip_end_ms' => (int) $validated['clip_end_ms'],
+            ]);
         } catch (SpeechToTextException $exception) {
             Log::error('Uploaded audio section transcription failed.', [
                 'message' => $exception->getMessage(),
                 'clip_index' => (int) $validated['clip_index'],
                 'range_label' => $validated['range_label'],
+                'language_code' => $validated['language_code'] ?? 'multi',
             ]);
 
             return response()->json([

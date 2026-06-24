@@ -23,13 +23,13 @@ Defined in `routes/web.php`.
 | POST | `/settings/audio-memory/temporary` | `settings.audio-memory.temporary.clear` | `AudioMemoryController@clearTemporary` | Deletes temporary uploaded source files and generated section files from private storage. |
 | POST | `/settings/audio-memory/stored` | `settings.audio-memory.stored.clear` | `AudioMemoryController@clearStored` | Clears stored audio bytes from existing audio chunk rows. |
 | POST | `/settings/audio-memory/all` | `settings.audio-memory.all.clear` | `AudioMemoryController@clearAll` | Clears temporary upload cache and stored audio bytes in one action. |
-| POST | `/settings/transcript-memory` | `settings.transcript-memory.clear` | `TranscriptMemoryController@clear` | Clears raw transcript text, timestamps, and furnished transcript rows. |
+| POST | `/settings/transcript-memory` | `settings.transcript-memory.clear` | `TranscriptMemoryController@clear` | Clears raw transcript text, timestamps, and polished transcript rows. |
 | GET | `/audio-chunks` | `audio-chunks.index` | `AudioChunkController@index` | Returns stored audio chunks and transcript metadata as JSON. |
 | POST | `/audio-chunks` | `audio-chunks.store` | `AudioChunkController@store` | Stores and transcribes a live clip, or transcribes a prepared upload section when `upload_session_id` is present. |
 | GET | `/audio-chunks/{audioChunk}/audio` | `audio-chunks.audio` | `AudioChunkController@audio` | Streams the stored audio blob for playback. |
 | DELETE | `/audio-chunks/{audioChunk}` | `audio-chunks.destroy` | `AudioChunkController@destroy` | Deletes one stored audio chunk. |
 | POST | `/audio-uploads` | `audio-uploads.store` | `UploadedAudioTranscriptionController@store` | Accepts a long audio file, creates a temporary upload session, probes duration, and returns planned sections. |
-| POST | `/transcripts/furnish` | `transcripts.furnish` | `TranscriptFurnishController@store` | Cleans raw transcript chunks through Gemini and stores cleaned rows. |
+| POST | `/transcripts/furnish` | `transcripts.furnish` | `TranscriptFurnishController@store` | Polishes raw transcript chunks through Gemini using the user's instructions and stores cleaned rows. |
 
 Laravel also exposes framework routes such as `/up` and local storage routes.
 
@@ -82,8 +82,8 @@ Accepted chunk sizes are 60, 120, or 300 seconds. The upload flow does not enfor
 Cleans stored raw transcripts with Gemini.
 
 - `store()`: validates `category_name`, optional `user_id`, and optional `window_index`.
-- When `window_index` is present, only cleans one 60-second transcript window.
-- When `window_index` is absent, walks all chunks for the category and cleans them by 60-second windows.
+- When `window_index` is present, only cleans one five-minute transcript window.
+- When `window_index` is absent, walks all chunks for the category and cleans them by five-minute windows.
 - Uses `clean_transcript_chunks` as a cache. Existing cleaned rows are returned without re-calling Gemini.
 - Applies a 4-second pause between Gemini requests when cleaning multiple populated windows.
 
@@ -91,7 +91,7 @@ Key behavior:
 
 - Raw rows come from `audio_chunks`.
 - Clean rows are stored in `clean_transcript_chunks`.
-- Cleaning is grouped by `clip_start_ms` in 60-second windows.
+- Polishing is grouped by `clip_start_ms` in five-minute windows.
 - If no raw transcript rows exist for the category/window, the endpoint returns 404.
 
 ### `SettingsController`
@@ -101,7 +101,7 @@ Manages app-level provider settings.
 - `edit()`: prepares all settings page display data, renders provider cards, shows whether ElevenLabs, Deepgram, and Gemini API keys are configured, displays fixed model values, and includes the current audio memory snapshot.
 - `update()`: validates and saves provider API keys and the selected main speech-to-text provider through `AppSettingsService`.
 
-The settings page allows users to replace the ElevenLabs, Deepgram, and Gemini API keys. Either ElevenLabs or Deepgram can be selected as the main speech-to-text provider. Gemini is optional and is only needed when users want to furnish or clean raw transcript text. The Deepgram and Gemini models are stored in SQL but shown as read-only values.
+The settings page allows users to replace the ElevenLabs, Deepgram, and Gemini API keys. Either ElevenLabs or Deepgram can be selected as the main speech-to-text provider. Gemini is optional and is only needed when users want to polish raw transcript text. The Deepgram and Gemini models are stored in SQL but shown as read-only values.
 
 ### `AudioMemoryController`
 
@@ -117,7 +117,7 @@ Both actions redirect back to Settings with a status message showing the amount 
 
 Handles transcript text cleanup from the Settings page.
 
-- `clear()`: clears `translated_text` and `transcription_timestamps` from `audio_chunks`, and deletes furnished rows from `clean_transcript_chunks`.
+- `clear()`: clears `translated_text` and `transcription_timestamps` from `audio_chunks`, and deletes polished rows from `clean_transcript_chunks`.
 
 The action keeps stored audio records in place.
 
@@ -127,10 +127,12 @@ The action keeps stored audio records in place.
 
 Shared HTML shell for both screens.
 
-- Loads CSRF meta, jQuery, `public/notification.js`, Vite CSS, and `resources/js/app.js`.
+- Loads CSRF meta, jQuery, shared helpers, modal scripts from `public/js/modals`, Vite CSS, and `resources/js/app.js`.
 - Sets `data-page` to either `live` or `upload`.
 - Injects route URLs into `body` data attributes so the JavaScript can call Laravel endpoints without hard-coded URLs.
 - Renders the shared header, page slot, and footer.
+- Keeps the desktop window fixed to the viewport; page-level scrolling is disabled.
+- Includes modal partials from `resources/views/modals` for transcript, pending audio, and Polish instructions.
 
 Live page data attributes:
 
@@ -170,10 +172,10 @@ Major UI areas:
 
 - Category input with suggestions.
 - Large record/stop toggle.
-- Live pending clip queue.
-- Stored transcription list for the selected category.
-- Raw/clean export controls.
-- Furnish Transcript button.
+- Progress-only live processing panel.
+- Transcript button opening a right-side transcript drawer.
+- Pending Audio button opening a separate right-side queue drawer.
+- Transcript drawer controls for Polish, Raw/Cleaned mode, playback, delete, and export.
 
 The JavaScript records microphone audio through `MediaRecorder`, splits it into 10-second clips, posts each clip to `POST /audio-chunks`, and refreshes stored transcript rows from `GET /audio-chunks`.
 
@@ -185,9 +187,20 @@ Major UI areas:
 
 - File picker and upload metadata.
 - Category and chunk length controls.
-- Section queue with Start, Continue, Retry, and Cancel controls.
-- Cleaner progress panel.
-- Transcript preview and raw/clean export controls.
+- Start, Continue, Retry, and Cancel processing controls.
+- Upload and Polish progress panels.
+- Transcript button opening a right-side transcript drawer.
+- Pending Audio button opening a separate right-side queue drawer.
+
+### `resources/views/modals`
+
+All modal and drawer markup belongs in this folder.
+
+- `transcript-sidebar.blade.php`: transcript drawer and Polish/export controls.
+- `pending-clips-sidebar.blade.php`: pending live or upload clips.
+- `polish-instructions.blade.php`: Gemini instruction presets and custom instructions.
+
+Related modal behavior belongs in `public/js/modals`, not in page templates or `resources/js/app.js`.
 
 The JavaScript sends either the original browser-selected file or the Tauri-selected local file path to `POST /audio-uploads`, receives a session id and planned sections, then posts each section to `POST /audio-chunks` with `upload_session_id`.
 
@@ -221,7 +234,7 @@ Audio memory values come from `AudioMemoryService`; transcript memory values com
 
 ## Client-Side Workflow
 
-All page logic is in `resources/js/app.js`.
+Processing and transcript rendering logic is in `resources/js/app.js`. Modal presentation behavior is kept separately in `public/js/modals`.
 
 ### Live Page Flow
 
@@ -232,7 +245,7 @@ All page logic is in `resources/js/app.js`.
 5. Each clip is queued and posted to `POST /audio-chunks`.
 6. The backend sends the clip to the selected speech-to-text provider and stores the audio blob, transcript text, timestamps, and metadata.
 7. The frontend refreshes stored rows from `GET /audio-chunks`.
-8. User can play/delete clips, furnish the transcript, and export raw or cleaned text.
+8. User can play/delete clips, polish the transcript with their own Gemini instructions, and export raw or cleaned text.
 
 ### Upload Page Flow
 
@@ -397,9 +410,9 @@ Tracks and clears transcript text storage used by the app.
 Responsibilities:
 
 - Count raw transcript records and text/timestamp bytes in `audio_chunks`.
-- Count furnished transcript records and text/timestamp bytes in `clean_transcript_chunks`.
+- Count polished transcript records and text/timestamp bytes in `clean_transcript_chunks`.
 - Clear `translated_text` and `transcription_timestamps` from stored audio records.
-- Delete furnished transcript rows from `clean_transcript_chunks`.
+- Delete polished transcript rows from `clean_transcript_chunks`.
 - Keep stored audio records in place when transcript text is cleared.
 
 ### `ProviderApiTestService`
@@ -569,7 +582,7 @@ Run with:
 - Temporary upload cache cleanup removes private storage files only.
 - Stored audio cleanup clears audio bytes in `audio_chunks`; transcript text cleanup clears transcript fields and removes `clean_transcript_chunks` rows.
 - The live page assumes 10-second recording segments in `resources/js/app.js`.
-- The transcript cleaner assumes 60-second furnishing windows in `TranscriptFurnishController`.
+- Transcript polishing uses five-minute windows in `TranscriptFurnishController`.
 - Raw and cleaned export behavior is frontend-only; exported files are generated in the browser.
 - Audio blobs are stored directly in the database. Large files are handled by storing only extracted sections in `audio_chunks`, while the original upload lives temporarily under private storage.
 - There is no dedicated `AudioChunk` Eloquent model; controllers currently use the query builder directly.

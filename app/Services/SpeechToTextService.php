@@ -8,9 +8,7 @@ use SplFileInfo;
 class SpeechToTextService
 {
     public function __construct(
-        private readonly AppSettingsService $settings,
-        private readonly ElevenLabsSpeechToTextService $elevenLabs,
-        private readonly DeepgramSpeechToTextService $deepgram,
+        private readonly HostedTranscriptionApiService $api,
     ) {
     }
 
@@ -20,9 +18,6 @@ class SpeechToTextService
      */
     public function transcribe(UploadedFile|string|SplFileInfo $audio, array $options = []): array
     {
-        return match ($this->settings->speechToTextProvider()) {
-            'deepgram' => $this->deepgram->transcribe($audio, $options),
-            default => $this->elevenLabs->transcribe($audio, $options),
-        };
+        return $this->api->transcribe($audio, $options);
     }
 }

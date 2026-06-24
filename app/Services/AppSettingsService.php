@@ -8,105 +8,58 @@ use Throwable;
 
 class AppSettingsService
 {
-    public const ELEVENLABS_API_KEY = 'elevenlabs.api_key';
+    public const BASE_URL = 'transcription_api.base_url';
 
-    public const DEEPGRAM_API_KEY = 'deepgram.api_key';
+    public const LICENSE_KEY = 'transcription_api.license_key';
+
+    public const LICENSE_STATUS = 'transcription_api.license_status';
 
     public const SPEECH_TO_TEXT_PROVIDER = 'speech_to_text.provider';
 
-    public const DEEPGRAM_MODEL = 'deepgram.model';
+    public const SPEECH_TO_TEXT_MODEL = 'speech_to_text.model';
 
-    public const GEMINI_API_KEY = 'gemini.api_key';
-
-    public const GEMINI_MODEL = 'gemini.model';
-
-    public const GEMINI_TIMEOUT = 'gemini.timeout';
-
-    public const GEMINI_MAX_RETRIES = 'gemini.max_retries';
-
-    public const ELEVENLABS_STATUS = 'elevenlabs.status';
-
-    public const DEEPGRAM_STATUS = 'deepgram.status';
-
-    public const GEMINI_STATUS = 'gemini.status';
-
-    private const DEFAULT_SPEECH_TO_TEXT_PROVIDER = 'elevenlabs';
-
-    private const FIXED_DEEPGRAM_MODEL = 'nova-3';
-
-    private const FIXED_GEMINI_MODEL = 'gemini-3.1-flash-lite';
-
-    private const FIXED_GEMINI_TIMEOUT = '30';
-
-    private const FIXED_GEMINI_MAX_RETRIES = '3';
-
-    public function elevenLabsApiKey(): ?string
+    public function licenseKey(): ?string
     {
-        return $this->get(self::ELEVENLABS_API_KEY);
+        return $this->get(self::LICENSE_KEY);
     }
 
-    public function hasElevenLabsApiKey(): bool
+    public function hasLicenseKey(): bool
     {
-        $apiKey = $this->elevenLabsApiKey();
+        $licenseKey = $this->licenseKey();
 
-        return is_string($apiKey) && trim($apiKey) !== '';
+        return is_string($licenseKey) && trim($licenseKey) !== '';
     }
 
-    public function setElevenLabsApiKey(string $apiKey): void
+    public function licenseKeySuffix(int $length = 5): ?string
     {
-        $this->set(self::ELEVENLABS_API_KEY, trim($apiKey));
-    }
+        $licenseKey = trim((string) $this->licenseKey());
 
-    public function deepgramApiKey(): ?string
-    {
-        return $this->get(self::DEEPGRAM_API_KEY);
-    }
-
-    public function hasDeepgramApiKey(): bool
-    {
-        $apiKey = $this->deepgramApiKey();
-
-        return is_string($apiKey) && trim($apiKey) !== '';
-    }
-
-    public function setDeepgramApiKey(string $apiKey): void
-    {
-        $this->set(self::DEEPGRAM_API_KEY, trim($apiKey));
-    }
-
-    public function speechToTextProvider(): string
-    {
-        $provider = $this->get(self::SPEECH_TO_TEXT_PROVIDER, self::DEFAULT_SPEECH_TO_TEXT_PROVIDER);
-
-        return in_array($provider, ['elevenlabs', 'deepgram'], true)
-            ? $provider
-            : self::DEFAULT_SPEECH_TO_TEXT_PROVIDER;
-    }
-
-    public function setSpeechToTextProvider(string $provider): void
-    {
-        if (! in_array($provider, ['elevenlabs', 'deepgram'], true)) {
-            $provider = self::DEFAULT_SPEECH_TO_TEXT_PROVIDER;
+        if ($licenseKey === '') {
+            return null;
         }
 
-        $this->set(self::SPEECH_TO_TEXT_PROVIDER, $provider);
+        return substr($licenseKey, -max(1, $length));
     }
 
-    public function geminiApiKey(): ?string
+    public function setLicenseKey(string $licenseKey): void
     {
-        return $this->get(self::GEMINI_API_KEY);
+        $this->set(self::LICENSE_KEY, trim($licenseKey));
     }
 
-    public function hasGeminiApiKey(): bool
+    public function apiBaseUrl(): string
     {
-        $apiKey = $this->geminiApiKey();
+        $baseUrl = $this->get(self::BASE_URL);
 
-        return is_string($apiKey) && trim($apiKey) !== '';
+        if (is_string($baseUrl) && trim($baseUrl) !== '') {
+            return $this->normalizeApiBaseUrl($baseUrl);
+        }
+
+        return $this->normalizeApiBaseUrl((string) config('services.transcription_api.base_url', 'https://dilgaims.site/api'));
     }
 
-    public function setGeminiApiKey(string $apiKey): void
+    public function setApiBaseUrl(string $baseUrl): void
     {
-        $this->set(self::GEMINI_API_KEY, trim($apiKey));
+        $this->set(self::BASE_URL, $this->normalizeApiBaseUrl($baseUrl));
     }
 
     public function storageIsReady(): bool
@@ -114,96 +67,230 @@ class AppSettingsService
         return $this->settingsTableExists();
     }
 
-    public function providerStatus(string $provider): array
+    public function licenseStatus(): array
     {
-        $key = match ($provider) {
-            'elevenlabs' => self::ELEVENLABS_STATUS,
-            'deepgram' => self::DEEPGRAM_STATUS,
-            'gemini' => self::GEMINI_STATUS,
-            default => null,
-        };
-
-        if ($key === null) {
-            return $this->notConnectedStatus('This provider is not set up yet.');
-        }
-
-        $status = $this->get($key);
+        $status = $this->get(self::LICENSE_STATUS);
 
         if (! is_string($status) || trim($status) === '') {
-            return $this->notConnectedStatus('This provider has not been tested yet.');
+            return [];
         }
 
         $decoded = json_decode($status, true);
 
-        if (! is_array($decoded)) {
-            return $this->notConnectedStatus('This provider has not been tested yet.');
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    public function setLicenseStatus(array $status): void
+    {
+        $this->set(self::LICENSE_STATUS, json_encode($status, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+    }
+
+    public function licenseStatusLabel(): string
+    {
+        $status = $this->licenseStatus();
+
+        if (($status['valid'] ?? false) && ($status['active'] ?? false) && ! ($status['expired'] ?? false)) {
+            return 'Ready';
+        }
+
+        return $this->hasLicenseKey() ? 'Needs server check' : 'Needs license';
+    }
+
+    public function licenseStatusMessage(): string
+    {
+        $status = $this->licenseStatus();
+
+        if ($status === []) {
+            return 'Save and test your license key to load available transcription providers.';
+        }
+
+        if (! ($status['valid'] ?? false)) {
+            return 'The saved license key is invalid.';
+        }
+
+        if (! ($status['active'] ?? false)) {
+            return 'The saved license key is inactive.';
+        }
+
+        if ($status['expired'] ?? false) {
+            return 'The saved license key has expired.';
+        }
+
+        if ($status['rate_limited'] ?? false) {
+            $retryAfter = (int) ($status['rate_limit']['retry_after'] ?? 0);
+
+            return $retryAfter > 0
+                ? "This license is rate-limited. Try again in {$retryAfter} seconds."
+                : 'This license is rate-limited. Please wait and try again.';
+        }
+
+        if (! (($status['apis']['transcribe']['allowed'] ?? false) === true)) {
+            return 'This license cannot transcribe audio right now.';
+        }
+
+        return 'License connected. Provider, model, and language options are loaded from the server.';
+    }
+
+    public function speechToTextProvider(): string
+    {
+        $provider = $this->get(self::SPEECH_TO_TEXT_PROVIDER);
+        $providers = $this->transcriptionProviderOptions();
+
+        if (is_string($provider) && isset($providers[$provider])) {
+            return $provider;
+        }
+
+        return (string) (array_key_first($providers) ?? '');
+    }
+
+    public function setSpeechToTextProvider(string $provider): void
+    {
+        $this->set(self::SPEECH_TO_TEXT_PROVIDER, trim($provider));
+    }
+
+    public function speechToTextModel(?string $provider = null): string
+    {
+        $provider = $provider ?: $this->speechToTextProvider();
+        $model = $this->get(self::SPEECH_TO_TEXT_MODEL);
+        $models = $this->transcriptionModelOptions($provider);
+
+        if (is_string($model) && isset($models[$model])) {
+            return $model;
+        }
+
+        return (string) (array_key_first($models) ?? '');
+    }
+
+    public function setSpeechToTextModel(string $model): void
+    {
+        $this->set(self::SPEECH_TO_TEXT_MODEL, trim($model));
+    }
+
+    /**
+     * @return array<string, array{provider: string, name: string, models: array<int, array<string, mixed>>}>
+     */
+    public function transcriptionProviderOptions(): array
+    {
+        $status = $this->licenseStatus();
+
+        if (($status['apis']['transcribe']['allowed'] ?? true) !== true) {
+            return [];
+        }
+
+        $providers = $status['providers']['transcription'] ?? [];
+
+        if (! is_array($providers)) {
+            return [];
+        }
+
+        $options = [];
+
+        foreach ($providers as $provider) {
+            if (! is_array($provider)) {
+                continue;
+            }
+
+            if (! ($provider['configured'] ?? false) || ! ($provider['enabled'] ?? false) || ! ($provider['connected'] ?? false)) {
+                continue;
+            }
+
+            $key = (string) ($provider['provider'] ?? '');
+
+            if ($key === '') {
+                continue;
+            }
+
+            $models = is_array($provider['models'] ?? null) ? $provider['models'] : [];
+
+            if ($models === []) {
+                continue;
+            }
+
+            $options[$key] = [
+                'provider' => $key,
+                'name' => (string) ($provider['name'] ?? ucfirst($key)),
+                'models' => array_values(array_filter($models, 'is_array')),
+            ];
+        }
+
+        return $options;
+    }
+
+    /**
+     * @return array<string, array{id: string, label: string, default_language_code: string, languages: array<int, array<string, string>>}>
+     */
+    public function transcriptionModelOptions(?string $provider = null): array
+    {
+        $provider = $provider ?: $this->speechToTextProvider();
+        $providerConfig = $this->transcriptionProviderOptions()[$provider] ?? null;
+
+        if (! is_array($providerConfig)) {
+            return [];
+        }
+
+        $models = [];
+
+        foreach ($providerConfig['models'] as $model) {
+            $id = (string) ($model['id'] ?? '');
+
+            if ($id === '') {
+                continue;
+            }
+
+            $models[$id] = [
+                'id' => $id,
+                'label' => (string) ($model['label'] ?? $id),
+                'default_language_code' => (string) ($model['default_language_code'] ?? ''),
+                'languages' => $this->normalizeLanguageOptions($model['languages'] ?? []),
+            ];
+        }
+
+        return $models;
+    }
+
+    /**
+     * @return array<int, array{value: string, label: string}>
+     */
+    public function speechToTextLanguageOptions(?string $provider = null, ?string $model = null): array
+    {
+        $provider = $provider ?: $this->speechToTextProvider();
+        $model = $model ?: $this->speechToTextModel($provider);
+        $modelConfig = $this->transcriptionModelOptions($provider)[$model] ?? null;
+        $languages = is_array($modelConfig) ? ($modelConfig['languages'] ?? []) : [];
+
+        if ($languages !== []) {
+            return $languages;
         }
 
         return [
-            'status' => in_array($decoded['status'] ?? null, ['connected', 'not_connected', 'invalid'], true)
-                ? $decoded['status']
-                : 'not_connected',
-            'message' => (string) ($decoded['message'] ?? ''),
-            'checked_at' => $decoded['checked_at'] ?? null,
-            'details' => is_array($decoded['details'] ?? null) ? $decoded['details'] : [],
+            ['value' => 'multi', 'label' => 'Multilingual'],
         ];
     }
 
-    public function setProviderStatus(string $provider, array $status): void
+    /**
+     * @return array{provider: string, model: string, language: string}
+     */
+    public function transcriptionSelection(?string $languageCode = null): array
     {
-        $key = match ($provider) {
-            'elevenlabs' => self::ELEVENLABS_STATUS,
-            'deepgram' => self::DEEPGRAM_STATUS,
-            'gemini' => self::GEMINI_STATUS,
-            default => null,
-        };
+        $provider = $this->speechToTextProvider();
+        $model = $this->speechToTextModel($provider);
+        $languages = $this->speechToTextLanguageOptions($provider, $model);
+        $modelConfig = $this->transcriptionModelOptions($provider)[$model] ?? [];
+        $allowed = collect($languages)->pluck('value')->all();
+        $language = trim((string) $languageCode);
 
-        if ($key === null) {
-            return;
+        if ($language === '' || ! in_array($language, $allowed, true)) {
+            $defaultLanguage = (string) ($modelConfig['default_language_code'] ?? '');
+            $language = in_array($defaultLanguage, $allowed, true)
+                ? $defaultLanguage
+                : (string) ($languages[0]['value'] ?? 'multi');
         }
 
-        $this->set($key, json_encode([
-            'status' => $status['status'] ?? 'not_connected',
-            'message' => $status['message'] ?? '',
-            'checked_at' => now()->toDateTimeString(),
-            'details' => $status['details'] ?? [],
-        ]));
-    }
-
-    public function geminiModel(): string
-    {
-        return $this->fixedSetting(self::GEMINI_MODEL, self::FIXED_GEMINI_MODEL);
-    }
-
-    public function deepgramModel(): string
-    {
-        return $this->fixedSetting(self::DEEPGRAM_MODEL, self::FIXED_DEEPGRAM_MODEL);
-    }
-
-    public function geminiTimeout(): int
-    {
-        return (int) $this->fixedSetting(self::GEMINI_TIMEOUT, self::FIXED_GEMINI_TIMEOUT);
-    }
-
-    public function geminiMaxRetries(): int
-    {
-        return (int) $this->fixedSetting(self::GEMINI_MAX_RETRIES, self::FIXED_GEMINI_MAX_RETRIES);
-    }
-
-    public function ensureFixedGeminiSettings(): void
-    {
-        $this->set(self::GEMINI_MODEL, self::FIXED_GEMINI_MODEL);
-        $this->set(self::GEMINI_TIMEOUT, self::FIXED_GEMINI_TIMEOUT);
-        $this->set(self::GEMINI_MAX_RETRIES, self::FIXED_GEMINI_MAX_RETRIES);
-    }
-
-    public function ensureFixedSpeechToTextSettings(): void
-    {
-        if (! in_array($this->get(self::SPEECH_TO_TEXT_PROVIDER), ['elevenlabs', 'deepgram'], true)) {
-            $this->set(self::SPEECH_TO_TEXT_PROVIDER, self::DEFAULT_SPEECH_TO_TEXT_PROVIDER);
-        }
-
-        $this->set(self::DEEPGRAM_MODEL, self::FIXED_DEEPGRAM_MODEL);
+        return [
+            'provider' => $provider,
+            'model' => $model,
+            'language' => $language,
+        ];
     }
 
     public function get(string $key, ?string $default = null): ?string
@@ -219,11 +306,7 @@ class AppSettingsService
         }
 
         try {
-            if ($setting->value === null) {
-                return $default;
-            }
-
-            return (string) $setting->value;
+            return $setting->value === null ? $default : (string) $setting->value;
         } catch (Throwable) {
             return $default;
         }
@@ -241,6 +324,48 @@ class AppSettingsService
         );
     }
 
+    private function normalizeLanguageOptions(mixed $languages): array
+    {
+        if (! is_array($languages)) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map(
+            function ($language): ?array {
+                if (! is_array($language)) {
+                    return null;
+                }
+
+                $code = (string) ($language['code'] ?? '');
+
+                if ($code === '') {
+                    return null;
+                }
+
+                return [
+                    'value' => $code,
+                    'label' => (string) ($language['label'] ?? $code),
+                ];
+            },
+            $languages,
+        )));
+    }
+
+    private function normalizeApiBaseUrl(string $baseUrl): string
+    {
+        $baseUrl = trim($baseUrl);
+
+        if ($baseUrl === '') {
+            return 'https://dilgaims.site/api';
+        }
+
+        if (! preg_match('/^https?:\/\//i', $baseUrl)) {
+            $baseUrl = 'https://'.$baseUrl;
+        }
+
+        return rtrim($baseUrl, '/');
+    }
+
     private function settingsTableExists(): bool
     {
         try {
@@ -250,15 +375,6 @@ class AppSettingsService
         }
     }
 
-    private function fixedSetting(string $key, string $value): string
-    {
-        if ($this->get($key, $value) !== $value) {
-            $this->set($key, $value);
-        }
-
-        return $value;
-    }
-
     private function setting(string $key): ?AppSetting
     {
         try {
@@ -266,15 +382,5 @@ class AppSettingsService
         } catch (Throwable) {
             return null;
         }
-    }
-
-    private function notConnectedStatus(string $message): array
-    {
-        return [
-            'status' => 'not_connected',
-            'message' => $message,
-            'checked_at' => null,
-            'details' => [],
-        ];
     }
 }

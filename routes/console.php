@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\AppSettingsService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -27,6 +28,7 @@ Artisan::command('app:prepare-tauri-build', function () {
 
     $deletedCleanChunks = 0;
     $deletedAudioChunks = 0;
+    $hasDefaultLicenseKey = false;
 
     if (Schema::hasTable('clean_transcript_chunks')) {
         $deletedCleanChunks = DB::table('clean_transcript_chunks')->delete();
@@ -34,6 +36,10 @@ Artisan::command('app:prepare-tauri-build', function () {
 
     if (Schema::hasTable('audio_chunks')) {
         $deletedAudioChunks = DB::table('audio_chunks')->delete();
+    }
+
+    if (Schema::hasTable('app_settings')) {
+        $hasDefaultLicenseKey = app(AppSettingsService::class)->hasLicenseKey();
     }
 
     if (DB::connection()->getDriverName() === 'sqlite') {
@@ -48,8 +54,90 @@ Artisan::command('app:prepare-tauri-build', function () {
     $this->info("Prepared Tauri build database.");
     $this->line("Deleted clean transcript chunks: {$deletedCleanChunks}");
     $this->line("Deleted audio chunks: {$deletedAudioChunks}");
+    $this->line('Default license included: '.($hasDefaultLicenseKey ? 'yes' : 'no'));
     $this->line("Bundled SQLite snapshot: {$sqliteSnapshotPath}");
 })->purpose('Remove transcript and audio records before packaging the Tauri app.');
+
+Artisan::command('app:sync-bundled-default-settings {--bundled-database=}', function () {
+    if (! Schema::hasTable('app_settings')) {
+        $this->line('Default settings sync skipped: app_settings table is missing.');
+
+        return 0;
+    }
+
+    $settings = app(AppSettingsService::class);
+
+    if ($settings->hasLicenseKey()) {
+        $this->line('Default settings sync skipped: local license already exists.');
+
+        return 0;
+    }
+
+    $bundledDatabasePath = (string) ($this->option('bundled-database') ?: database_path('database.sqlite'));
+
+    if (! is_file($bundledDatabasePath)) {
+        $this->line('Default settings sync skipped: bundled database is missing.');
+
+        return 0;
+    }
+
+    $bundled = new PDO('sqlite:'.$bundledDatabasePath);
+    $bundled->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+    $hasBundledSettings = $bundled
+        ->query("select name from sqlite_master where type = 'table' and name = 'app_settings'")
+        ->fetchColumn();
+
+    if (! $hasBundledSettings) {
+        $this->line('Default settings sync skipped: bundled app_settings table is missing.');
+
+        return 0;
+    }
+
+    $settingKeys = [
+        AppSettingsService::BASE_URL,
+        AppSettingsService::LICENSE_KEY,
+        AppSettingsService::LICENSE_STATUS,
+        AppSettingsService::SPEECH_TO_TEXT_PROVIDER,
+        AppSettingsService::SPEECH_TO_TEXT_MODEL,
+    ];
+    $placeholders = implode(',', array_fill(0, count($settingKeys), '?'));
+    $statement = $bundled->prepare(
+        "select key, value, is_encrypted from app_settings where key in ({$placeholders}) and value is not null and trim(value) != ''"
+    );
+    $statement->execute($settingKeys);
+
+    $synced = 0;
+
+    foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        if (($row['key'] ?? '') === AppSettingsService::LICENSE_KEY && $settings->hasLicenseKey()) {
+            continue;
+        }
+
+        $localValue = $settings->get((string) $row['key']);
+
+        if (is_string($localValue) && trim($localValue) !== '') {
+            continue;
+        }
+
+        if (in_array($row['key'] ?? '', $settingKeys, true)) {
+            DB::table('app_settings')->updateOrInsert(
+                ['key' => $row['key']],
+                [
+                    'value' => $row['value'],
+                    'is_encrypted' => (bool) $row['is_encrypted'],
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ],
+            );
+            $synced++;
+        }
+    }
+
+    $this->line("Default settings synced: {$synced}");
+
+    return 0;
+})->purpose('Copy bundled default license settings into the writable production database when missing.');
 
 Artisan::command('app:prepare-tauri-empty-build', function () {
     $sqliteSnapshotPath = base_path('build/tauri/database/database.sqlite');

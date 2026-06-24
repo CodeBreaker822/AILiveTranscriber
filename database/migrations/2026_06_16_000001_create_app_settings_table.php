@@ -18,32 +18,26 @@ return new class extends Migration
         });
 
         AppSetting::query()->create([
+            'key' => 'transcription_api.base_url',
+            'value' => config('services.transcription_api.base_url', 'https://dilgaims.site/api'),
+            'is_encrypted' => true,
+        ]);
+
+        AppSetting::query()->create([
+            'key' => 'transcription_api.license_key',
+            'value' => '',
+            'is_encrypted' => true,
+        ]);
+
+        AppSetting::query()->create([
             'key' => 'speech_to_text.provider',
-            'value' => 'elevenlabs',
+            'value' => '',
             'is_encrypted' => true,
         ]);
 
         AppSetting::query()->create([
-            'key' => 'deepgram.model',
-            'value' => 'nova-3',
-            'is_encrypted' => true,
-        ]);
-
-        AppSetting::query()->create([
-            'key' => 'gemini.model',
-            'value' => 'gemini-3.1-flash-lite',
-            'is_encrypted' => true,
-        ]);
-
-        AppSetting::query()->create([
-            'key' => 'gemini.timeout',
-            'value' => '30',
-            'is_encrypted' => true,
-        ]);
-
-        AppSetting::query()->create([
-            'key' => 'gemini.max_retries',
-            'value' => '3',
+            'key' => 'speech_to_text.model',
+            'value' => '',
             'is_encrypted' => true,
         ]);
     }

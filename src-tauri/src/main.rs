@@ -212,12 +212,40 @@ fn run_migrations(
     php_path: PathBuf,
     artisan_path: PathBuf,
 ) -> Result<(), String> {
+    run_artisan(
+        paths,
+        php_path,
+        artisan_path,
+        &["migrate", "--force", "--no-interaction"],
+        "database migrations",
+    )
+}
+
+fn sync_bundled_default_settings(
+    paths: &LaravelPaths,
+    php_path: PathBuf,
+    artisan_path: PathBuf,
+) -> Result<(), String> {
+    run_artisan(
+        paths,
+        php_path,
+        artisan_path,
+        &["app:sync-bundled-default-settings"],
+        "bundled default settings sync",
+    )
+}
+
+fn run_artisan(
+    paths: &LaravelPaths,
+    php_path: PathBuf,
+    artisan_path: PathBuf,
+    args: &[&str],
+    label: &str,
+) -> Result<(), String> {
     let mut command = laravel_command(php_path, artisan_path, paths);
 
     command
-        .arg("migrate")
-        .arg("--force")
-        .arg("--no-interaction")
+        .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
@@ -226,7 +254,7 @@ fn run_migrations(
 
     let output = command
         .output()
-        .map_err(|error| format!("failed to run database migrations: {error}"))?;
+        .map_err(|error| format!("failed to run {label}: {error}"))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -237,7 +265,7 @@ fn run_migrations(
             stderr.trim()
         };
 
-        return Err(format!("database migrations failed: {details}"));
+        return Err(format!("{label} failed: {details}"));
     }
 
     Ok(())
@@ -378,6 +406,8 @@ fn start_laravel(app: &tauri::AppHandle) -> Result<(), String> {
 
     run_migrations(&paths, php_path.clone(), artisan_path.clone())?;
     append_startup_log(&paths, "Database migrations completed.");
+    sync_bundled_default_settings(&paths, php_path.clone(), artisan_path.clone())?;
+    append_startup_log(&paths, "Bundled default settings sync completed.");
 
     let mut command = laravel_command(php_path, artisan_path, &paths);
     let stderr_log = startup_log

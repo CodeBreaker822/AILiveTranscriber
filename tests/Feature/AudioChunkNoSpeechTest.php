@@ -15,22 +15,46 @@ class AudioChunkNoSpeechTest extends TestCase
 
     public function test_live_chunks_without_speech_are_not_stored(): void
     {
-        $this->mock(SpeechToTextService::class, function ($mock): void {
-            $mock->shouldReceive('transcribe')->once()->andReturn([
+        $segmentPath = tempnam(sys_get_temp_dir(), 'aitranscriber-live-nospeech-');
+        file_put_contents($segmentPath, 'fake wav');
+
+        $this->mock(AudioFileChunkerService::class, function ($mock) use ($segmentPath): void {
+            $mock->shouldReceive('prepareLiveClip')->once()->andReturn([
+                'directory' => dirname($segmentPath),
+                'path' => $segmentPath,
+                'name' => 'live_00001.wav',
+                'mime_type' => 'audio/wav',
+                'size' => filesize($segmentPath),
+                'duration_ms' => 60000,
+            ]);
+            $mock->shouldReceive('cleanup')->once();
+        });
+
+        $this->mock(SpeechToTextService::class, function ($mock) use ($segmentPath): void {
+            $mock->shouldReceive('transcribe')->once()->with($segmentPath, [
+                'language_code' => 'multi',
+                'clip_index' => 1,
+                'clip_start_ms' => 300000,
+                'clip_end_ms' => 360000,
+            ])->andReturn([
                 'text' => 'No speech detected.',
                 'timestamps' => [],
             ]);
         });
 
-        $response = $this->postJson('/audio-chunks', [
-            'audio' => UploadedFile::fake()->create('clip.webm', 10, 'audio/webm'),
-            'category_name' => 'Meeting',
-            'clip_index' => 1,
-            'clip_start_ms' => 300000,
-            'clip_end_ms' => 360000,
-            'range_label' => '05:00-06:00',
-            'duration_ms' => 60000,
-        ]);
+        try {
+            $response = $this->postJson('/audio-chunks', [
+                'audio' => UploadedFile::fake()->create('clip.webm', 10, 'audio/webm'),
+                'category_name' => 'Meeting',
+                'clip_index' => 1,
+                'clip_start_ms' => 300000,
+                'clip_end_ms' => 360000,
+                'range_label' => '05:00-06:00',
+                'duration_ms' => 60000,
+            ]);
+        } finally {
+            @unlink($segmentPath);
+        }
 
         $response
             ->assertOk()
@@ -38,6 +62,63 @@ class AudioChunkNoSpeechTest extends TestCase
             ->assertJsonPath('data.reason', 'no_speech_detected');
 
         $this->assertDatabaseCount('audio_chunks', 0);
+    }
+
+    public function test_live_chunks_are_transcribed_from_prepared_wav_audio(): void
+    {
+        $segmentPath = tempnam(sys_get_temp_dir(), 'aitranscriber-live-wav-');
+        file_put_contents($segmentPath, 'prepared wav bytes');
+
+        $this->mock(AudioFileChunkerService::class, function ($mock) use ($segmentPath): void {
+            $mock->shouldReceive('prepareLiveClip')->once()->andReturn([
+                'directory' => dirname($segmentPath),
+                'path' => $segmentPath,
+                'name' => 'live_00002.wav',
+                'mime_type' => 'audio/wav',
+                'size' => filesize($segmentPath),
+                'duration_ms' => 60000,
+            ]);
+            $mock->shouldReceive('cleanup')->once();
+        });
+
+        $this->mock(SpeechToTextService::class, function ($mock) use ($segmentPath): void {
+            $mock->shouldReceive('transcribe')->once()->with($segmentPath, [
+                'language_code' => 'tl',
+                'clip_index' => 2,
+                'clip_start_ms' => 60000,
+                'clip_end_ms' => 120000,
+            ])->andReturn([
+                'text' => 'Maayong buntag.',
+                'timestamps' => [],
+            ]);
+        });
+
+        try {
+            $response = $this->postJson('/audio-chunks', [
+                'audio' => UploadedFile::fake()->create('clip.webm', 10, 'audio/webm'),
+                'category_name' => 'Meeting',
+                'clip_index' => 2,
+                'clip_start_ms' => 60000,
+                'clip_end_ms' => 120000,
+                'range_label' => '01:00-02:00',
+                'duration_ms' => 60000,
+                'language_code' => 'tl',
+            ]);
+        } finally {
+            @unlink($segmentPath);
+        }
+
+        $response
+            ->assertCreated()
+            ->assertJsonPath('data.translated_text', 'Maayong buntag.');
+
+        $this->assertDatabaseHas('audio_chunks', [
+            'category_name' => 'Meeting',
+            'original_name' => 'live_00002.wav',
+            'mime_type' => 'audio/wav',
+            'file_size_bytes' => strlen('prepared wav bytes'),
+            'translated_text' => 'Maayong buntag.',
+        ]);
     }
 
     public function test_uploaded_sections_without_speech_are_not_stored(): void

@@ -9,12 +9,12 @@ return new class extends Migration
     {
         AppSetting::query()->updateOrCreate(
             ['key' => 'speech_to_text.provider'],
-            ['value' => 'elevenlabs', 'is_encrypted' => true],
+            ['value' => '', 'is_encrypted' => true],
         );
 
         AppSetting::query()->updateOrCreate(
-            ['key' => 'deepgram.model'],
-            ['value' => 'nova-3', 'is_encrypted' => true],
+            ['key' => 'speech_to_text.model'],
+            ['value' => '', 'is_encrypted' => true],
         );
     }
 
@@ -23,9 +23,7 @@ return new class extends Migration
         AppSetting::query()
             ->whereIn('key', [
                 'speech_to_text.provider',
-                'deepgram.api_key',
-                'deepgram.status',
-                'deepgram.model',
+                'speech_to_text.model',
             ])
             ->delete();
     }

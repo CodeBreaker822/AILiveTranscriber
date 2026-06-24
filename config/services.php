@@ -22,32 +22,9 @@ return [
         'key' => env('RESEND_API_KEY'),
     ],
 
-    'elevenlabs' => [
-        'key' => null,
-        'speech_to_text_url' => env('ELEVENLABS_SPEECH_TO_TEXT_URL', 'https://api.elevenlabs.io/v1/speech-to-text'),
-        'speech_to_text_model' => env('ELEVENLABS_SPEECH_TO_TEXT_MODEL', 'scribe_v2'),
-        'speech_to_text_models' => ['scribe_v2', 'scribe_v1'],
-        'timeout' => env('ELEVENLABS_TIMEOUT', 120),
-    ],
-
-    'deepgram' => [
-        'key' => null,
-        'listen_url' => env('DEEPGRAM_LISTEN_URL', 'https://api.deepgram.com/v1/listen'),
-        'model' => env('DEEPGRAM_SPEECH_TO_TEXT_MODEL', 'nova-3'),
-        'language' => env('DEEPGRAM_LANGUAGE', 'multi'),
-        'speech_to_text_models' => ['nova-3', 'nova-2'],
-        'timeout' => env('DEEPGRAM_TIMEOUT', 120),
-    ],
-
-    'gemini' => [
-        'key' => null,
-        'model' => 'gemini-3.1-flash-lite',
-        'base_url' => env('GEMINI_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta'),
-        'generate_content_url' => env('GEMINI_GENERATE_CONTENT_URL', 'https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent'),
-        'timeout' => 30,
-        'max_retries' => 3,
-        'rpm_limit' => env('GEMINI_RPM_LIMIT', 15),
-        'rate_limit_key' => env('GEMINI_RATE_LIMIT_KEY', 'gemini_global_requests_per_minute'),
+    'transcription_api' => [
+        'base_url' => env('TRANSCRIPTION_API_BASE_URL', 'https://dilgaims.site/api'),
+        'timeout' => env('TRANSCRIPTION_API_TIMEOUT', 120),
     ],
 
     'ses' => [

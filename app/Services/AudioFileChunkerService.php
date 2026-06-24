@@ -122,6 +122,51 @@ class AudioFileChunkerService
     }
 
     /**
+     * @return array{directory: string, path: string, name: string, mime_type: string, size: int, duration_ms: int}
+     */
+    public function prepareLiveClip(UploadedFile $file, int $clipIndex): array
+    {
+        $inputPath = $file->getRealPath();
+
+        if (! is_string($inputPath) || ! is_file($inputPath)) {
+            throw new RuntimeException(ServiceUserMessage::audioPrepareFailed());
+        }
+
+        $directory = storage_path('app/private/audio-upload-chunks/'.uniqid('live-', true));
+        File::ensureDirectoryExists($directory);
+
+        $outputPath = $directory.DIRECTORY_SEPARATOR.sprintf('live_%05d.wav', max(1, $clipIndex));
+
+        $this->runProcess([
+            $this->ffmpegPath(),
+            '-y',
+            '-i',
+            $inputPath,
+            '-vn',
+            '-ac',
+            '1',
+            '-ar',
+            '16000',
+            '-c:a',
+            'pcm_s16le',
+            $outputPath,
+        ]);
+
+        if (! is_file($outputPath)) {
+            throw new RuntimeException(ServiceUserMessage::audioPrepareFailed());
+        }
+
+        return [
+            'directory' => $directory,
+            'path' => $outputPath,
+            'name' => basename($outputPath),
+            'mime_type' => 'audio/wav',
+            'size' => filesize($outputPath) ?: 0,
+            'duration_ms' => max(1, (int) round($this->probeDurationSeconds($outputPath) * 1000)),
+        ];
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     public function buildSections(int $durationMs, int $chunkSeconds): array
