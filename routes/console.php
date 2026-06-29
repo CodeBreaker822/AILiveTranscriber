@@ -6,10 +6,59 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
+use Symfony\Component\Process\Process;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
+
+Artisan::command('app:build-vad-cli', function () {
+    $manifestPath = base_path('vad-cli/Cargo.toml');
+    $targetDirectory = base_path('vad-cli/target/release');
+    $bundleDirectory = base_path('build/vad');
+    $binaryName = PHP_OS_FAMILY === 'Windows' ? 'vad-cli.exe' : 'vad-cli';
+    $binaryPath = $targetDirectory.DIRECTORY_SEPARATOR.$binaryName;
+
+    if (! File::exists($manifestPath)) {
+        $this->error("VAD CLI manifest is missing: {$manifestPath}");
+
+        return 1;
+    }
+
+    $process = new Process([
+        'cargo',
+        'build',
+        '--manifest-path',
+        $manifestPath,
+        '--release',
+    ], base_path());
+    $process->setTimeout(null);
+    $process->run(fn ($type, $buffer) => $this->output->write($buffer));
+
+    if (! $process->isSuccessful()) {
+        $this->error('VAD CLI build failed.');
+
+        return 1;
+    }
+
+    if (! File::exists($binaryPath)) {
+        $this->error("VAD CLI binary was not created: {$binaryPath}");
+
+        return 1;
+    }
+
+    File::ensureDirectoryExists($bundleDirectory);
+    File::copy($binaryPath, $bundleDirectory.DIRECTORY_SEPARATOR.$binaryName);
+
+    foreach (File::glob($targetDirectory.DIRECTORY_SEPARATOR.'*.dll') ?: [] as $dllPath) {
+        File::copy($dllPath, $bundleDirectory.DIRECTORY_SEPARATOR.basename($dllPath));
+    }
+
+    $this->info('Built VAD CLI.');
+    $this->line("Bundled VAD directory: {$bundleDirectory}");
+
+    return 0;
+})->purpose('Build the standalone Silero VAD CLI for Tauri packaging.');
 
 Artisan::command('app:prepare-tauri-build', function () {
     $sqlitePath = database_path('database.sqlite');

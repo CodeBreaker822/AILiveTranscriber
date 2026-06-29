@@ -3,8 +3,8 @@
 namespace Tests\Unit;
 
 use App\Services\AppSettingsService;
-use App\Services\GeminiTranscriptCleanerService;
 use App\Services\HostedTranscriptionApiService;
+use App\Services\TranscriptPolisherService;
 use App\Services\SpeechToTextService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -34,6 +34,43 @@ class HostedTranscriptionApiServiceTest extends TestCase
         Http::assertSent(function (Request $request): bool {
             return $request->method() === 'GET'
                 && $request->url() === 'https://dilgaims.site/api/license/status'
+                && $request->hasHeader('Authorization', 'Bearer license-123');
+        });
+    }
+
+    public function test_connectivity_probe_does_not_send_the_license_key(): void
+    {
+        config(['services.transcription_api.base_url' => 'https://dilgaims.site/api']);
+        app(AppSettingsService::class)->setLicenseKey('license-123');
+
+        Http::fake([
+            'https://dilgaims.site/api' => Http::response([], 404),
+        ]);
+
+        $this->assertTrue(app(HostedTranscriptionApiService::class)->serverIsReachable());
+
+        Http::assertSent(function (Request $request): bool {
+            return $request->url() === 'https://dilgaims.site/api'
+                && ! $request->hasHeader('Authorization');
+        });
+    }
+
+    public function test_it_requests_the_update_zip_with_bearer_license_key(): void
+    {
+        config(['services.transcription_api.base_url' => 'https://dilgaims.site/api']);
+        app(AppSettingsService::class)->setLicenseKey('license-123');
+
+        Http::fake([
+            'https://dilgaims.site/api/transcribe/update/zipfile' => Http::response('zip bytes'),
+        ]);
+
+        $response = app(HostedTranscriptionApiService::class)->downloadUpdateArchive();
+
+        $this->assertSame('zip bytes', $response->body());
+
+        Http::assertSent(function (Request $request): bool {
+            return $request->method() === 'GET'
+                && $request->url() === 'https://dilgaims.site/api/transcribe/update/zipfile'
                 && $request->hasHeader('Authorization', 'Bearer license-123');
         });
     }
@@ -108,12 +145,12 @@ class HostedTranscriptionApiServiceTest extends TestCase
                         'timestamps' => [],
                     ],
                 ],
-                'provider' => 'gemini',
-                'model' => 'gemini-3.1-flash-lite',
+                'provider' => 'openai',
+                'model' => 'gpt-4.1-mini',
             ]),
         ]);
 
-        $result = app(GeminiTranscriptCleanerService::class)->cleanChunks(
+        $result = app(TranscriptPolisherService::class)->polishChunks(
             [[
                 'id' => 10,
                 'clip_index' => 1,
@@ -126,6 +163,8 @@ class HostedTranscriptionApiServiceTest extends TestCase
 
         $this->assertSame(10, $result['chunks'][0]['audio_chunk_id']);
         $this->assertSame('We should begin now.', $result['chunks'][0]['text']);
+        $this->assertSame('openai', $result['provider']);
+        $this->assertSame('gpt-4.1-mini', $result['model']);
 
         Http::assertSent(function (Request $request): bool {
             $data = $request->data();
@@ -134,8 +173,38 @@ class HostedTranscriptionApiServiceTest extends TestCase
                 && $request->url() === 'https://dilgaims.site/api/polish'
                 && $request->hasHeader('Authorization', 'Bearer license-123')
                 && ($data['instruction'] ?? null) === 'Fix grammar.'
-                && (int) ($data['chunks'][0]['audio_chunk_id'] ?? 0) === 10;
+                && (int) ($data['chunks'][0]['audio_chunk_id'] ?? 0) === 10
+                && ! array_key_exists('provider', $data)
+                && ! array_key_exists('model', $data);
         });
+    }
+
+    public function test_empty_polish_uses_server_reported_current_polisher_metadata(): void
+    {
+        $settings = app(AppSettingsService::class);
+        $settings->setLicenseStatus([
+            'providers' => [
+                'polishing' => [
+                    [
+                        'provider' => 'anthropic',
+                        'configured' => true,
+                        'enabled' => true,
+                        'connected' => true,
+                        'models' => [
+                            ['id' => 'claude-sonnet-4'],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $result = app(TranscriptPolisherService::class)->polish('', [], [
+            'instructions' => 'Fix grammar.',
+        ]);
+
+        $this->assertSame('', $result['text']);
+        $this->assertSame('anthropic', $result['provider']);
+        $this->assertSame('claude-sonnet-4', $result['model']);
     }
 
     private function licenseStatusPayload(): array

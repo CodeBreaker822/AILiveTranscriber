@@ -24,9 +24,13 @@
     <body
         data-page="{{ $activePage }}"
         data-speech-provider="{{ app(\App\Services\AppSettingsService::class)->speechToTextProvider() }}"
+        data-update-connectivity-url="{{ route('app-update.connectivity') }}"
+        data-update-status-url="{{ route('app-update.status') }}"
+        data-update-download-url="{{ route('app-update.download') }}"
         @if ($activePage === 'live')
             data-upload-url="{{ route('audio-chunks.store') }}"
             data-stored-url="{{ route('audio-chunks.index') }}"
+            data-vad-log-url="{{ route('audio-vad-logs.index') }}"
             data-furnish-url="{{ route('transcripts.furnish') }}"
             data-default-user-id="1"
             data-default-category-name=""
@@ -36,6 +40,7 @@
             data-upload-audio-url="{{ route('audio-uploads.store') }}"
             data-audio-chunk-url="{{ route('audio-chunks.store') }}"
             data-stored-url="{{ route('audio-chunks.index') }}"
+            data-vad-log-url="{{ route('audio-vad-logs.index') }}"
             data-furnish-url="{{ route('transcripts.furnish') }}"
             data-default-user-id="1"
         @endif

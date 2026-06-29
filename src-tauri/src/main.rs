@@ -37,6 +37,7 @@ struct AudioFileSelection {
     path: String,
     name: String,
     size: u64,
+    duration_ms: Option<u64>,
 }
 
 fn bundled_project_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
@@ -171,24 +172,29 @@ fn append_startup_log(paths: &LaravelPaths, message: &str) {
 
 fn laravel_command(php_path: PathBuf, artisan_path: PathBuf, paths: &LaravelPaths) -> Command {
     let mut command = Command::new(php_path);
-    let php_dir = paths.project_dir.join("php");
-    let ca_bundle_path = php_dir.join("extras").join("ssl").join("cacert.pem");
-    let php_dir_env = env_path(&php_dir);
-    let ca_bundle_env = env_path(&ca_bundle_path);
     let database_env = env_path(&paths.database_path);
     let storage_env = env_path(&paths.storage_path);
 
     command
         .arg(artisan_path)
         .current_dir(&paths.project_dir)
-        .env("PHPRC", php_dir_env)
-        .env("PHP_INI_SCAN_DIR", "")
-        .env("CURL_CA_BUNDLE", ca_bundle_env.clone())
-        .env("SSL_CERT_FILE", ca_bundle_env)
         .env("DB_DATABASE", database_env)
         .env("APP_STORAGE_PATH", storage_env)
         .env("APP_ENV", "production")
         .env("APP_DEBUG", "false");
+
+    #[cfg(windows)]
+    {
+        let php_dir = paths.project_dir.join("php");
+        let ca_bundle_path = php_dir.join("extras").join("ssl").join("cacert.pem");
+        let ca_bundle_env = env_path(&ca_bundle_path);
+
+        command
+            .env("PHPRC", env_path(&php_dir))
+            .env("PHP_INI_SCAN_DIR", "")
+            .env("CURL_CA_BUNDLE", ca_bundle_env.clone())
+            .env("SSL_CERT_FILE", ca_bundle_env);
+    }
 
     command
 }
@@ -390,9 +396,13 @@ fn start_laravel(app: &tauri::AppHandle) -> Result<(), String> {
     ensure_runtime_storage(&paths)?;
     let startup_log = startup_log_handle(&paths)?;
 
+    #[cfg(windows)]
     let php_path = paths.project_dir.join("php").join("php.exe");
+    #[cfg(not(windows))]
+    let php_path = PathBuf::from("php");
     let artisan_path = paths.project_dir.join("artisan");
 
+    #[cfg(windows)]
     if !php_path.is_file() {
         return Err(format!("missing PHP runtime: {}", php_path.display()));
     }
@@ -717,12 +727,143 @@ fn choose_audio_file(app: tauri::AppHandle) -> Result<Option<AudioFileSelection>
         .and_then(|value| value.to_str())
         .unwrap_or("audio")
         .to_string();
+    let duration_ms = probe_audio_duration_ms(&app, &path).ok();
 
     Ok(Some(AudioFileSelection {
         path: env_path(&path),
         name,
         size: metadata.len(),
+        duration_ms,
     }))
+}
+
+fn probe_audio_duration_ms(_app: &tauri::AppHandle, path: &std::path::Path) -> Result<u64, String> {
+    #[cfg(windows)]
+    let ffprobe_path = bundled_project_dir(_app)?
+        .join("ffmpeg")
+        .join("bin")
+        .join("ffprobe.exe");
+    #[cfg(not(windows))]
+    let ffprobe_path = PathBuf::from("ffprobe");
+
+    #[cfg(windows)]
+    if !ffprobe_path.is_file() {
+        return Err("ffprobe is missing.".to_string());
+    }
+
+    let audio_path = env_path(path);
+    let mut command = Command::new(ffprobe_path);
+    command.args([
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        audio_path.as_str(),
+    ]);
+
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+
+    let output = command
+        .output()
+        .map_err(|error| format!("failed to inspect audio duration: {error}"))?;
+
+    if !output.status.success() {
+        return Err("ffprobe could not read the audio duration.".to_string());
+    }
+
+    let duration_seconds = String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse::<f64>()
+        .map_err(|error| format!("invalid audio duration: {error}"))?;
+
+    if !duration_seconds.is_finite() || duration_seconds <= 0.0 {
+        return Err("audio duration is unavailable.".to_string());
+    }
+
+    Ok((duration_seconds * 1000.0).round().max(1.0) as u64)
+}
+
+#[tauri::command]
+fn install_update(app: tauri::AppHandle, archive_path: String) -> Result<(), String> {
+    #[cfg(not(windows))]
+    {
+        let _ = (app, archive_path);
+        return Err(
+            "Automatic ZIP installation is available on Windows only. Replace the Linux AppImage to update."
+                .to_string(),
+        );
+    }
+
+    #[cfg(windows)]
+    {
+        let paths = laravel_paths(&app)?;
+        let archive = std::fs::canonicalize(PathBuf::from(archive_path))
+            .map_err(|error| format!("failed to locate downloaded update ZIP: {error}"))?;
+        let update_directory = paths
+            .storage_path
+            .join("app")
+            .join("private")
+            .join("app-updates");
+        let canonical_update_directory = std::fs::canonicalize(&update_directory)
+            .map_err(|error| format!("failed to locate local update directory: {error}"))?;
+
+        if !archive.starts_with(&canonical_update_directory)
+            || archive.extension().and_then(|value| value.to_str()) != Some("zip")
+        {
+            return Err("The update archive path is not allowed.".to_string());
+        }
+
+        let install_directory = std::fs::canonicalize(&paths.project_dir)
+            .map_err(|error| format!("failed to locate application directory: {error}"))?;
+        let executable = std::env::current_exe()
+            .map_err(|error| format!("failed to locate AITranscriber executable: {error}"))?;
+        let updater_script = update_directory.join("install-update.ps1");
+        let script = r#"param(
+    [Parameter(Mandatory=$true)][string]$Archive,
+    [Parameter(Mandatory=$true)][string]$InstallDirectory,
+    [Parameter(Mandatory=$true)][string]$Executable,
+    [Parameter(Mandatory=$true)][int]$ParentProcessId
+)
+$ErrorActionPreference = 'Stop'
+Wait-Process -Id $ParentProcessId -ErrorAction SilentlyContinue
+Start-Sleep -Milliseconds 750
+Expand-Archive -LiteralPath $Archive -DestinationPath $InstallDirectory -Force
+Remove-Item -LiteralPath $Archive -Force -ErrorAction SilentlyContinue
+Start-Process -FilePath $Executable -WorkingDirectory $InstallDirectory
+Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
+"#;
+
+        std::fs::write(&updater_script, script)
+            .map_err(|error| format!("failed to prepare update installer: {error}"))?;
+
+        let mut command = Command::new("powershell.exe");
+        command.args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+        ]);
+        command.arg(&updater_script);
+        command.arg("-Archive").arg(&archive);
+        command.arg("-InstallDirectory").arg(&install_directory);
+        command.arg("-Executable").arg(&executable);
+        command
+            .arg("-ParentProcessId")
+            .arg(std::process::id().to_string());
+        command.creation_flags(CREATE_NO_WINDOW);
+        command
+            .spawn()
+            .map_err(|error| format!("failed to start update installer: {error}"))?;
+
+        stop_laravel(&app);
+        app.exit(0);
+
+        Ok(())
+    }
 }
 
 fn main() {
@@ -733,7 +874,8 @@ fn main() {
             open_external_url,
             save_text_export,
             save_text_export_with_dialog,
-            choose_audio_file
+            choose_audio_file,
+            install_update
         ])
         .setup(|app| {
             let handle = app.handle().clone();

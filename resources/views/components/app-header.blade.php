@@ -94,3 +94,6 @@
         </div>
     </div>
 </header>
+
+@include('modals.app-update')
+<script src="{{ asset('js/modals/app-update.js') }}" defer></script>

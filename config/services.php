@@ -27,6 +27,15 @@ return [
         'timeout' => env('TRANSCRIPTION_API_TIMEOUT', 120),
     ],
 
+    'silero_vad' => [
+        'binary' => env('SILERO_VAD_BINARY'),
+        'threshold' => env('SILERO_VAD_THRESHOLD', 0.5),
+        'min_speech_ms' => env('SILERO_VAD_MIN_SPEECH_MS', 250),
+        'min_silence_ms' => env('SILERO_VAD_MIN_SILENCE_MS', 500),
+        'speech_pad_ms' => env('SILERO_VAD_SPEECH_PAD_MS', 80),
+        'timeout' => env('SILERO_VAD_TIMEOUT', 30),
+    ],
+
     'ses' => [
         'key' => env('AWS_ACCESS_KEY_ID'),
         'secret' => env('AWS_SECRET_ACCESS_KEY'),

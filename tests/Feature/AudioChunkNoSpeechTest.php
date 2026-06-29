@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Services\AudioFileChunkerService;
+use App\Services\SpeechAudioFilterService;
 use App\Services\SpeechToTextService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -30,16 +31,27 @@ class AudioChunkNoSpeechTest extends TestCase
             $mock->shouldReceive('cleanup')->once();
         });
 
-        $this->mock(SpeechToTextService::class, function ($mock) use ($segmentPath): void {
-            $mock->shouldReceive('transcribe')->once()->with($segmentPath, [
-                'language_code' => 'multi',
-                'clip_index' => 1,
-                'clip_start_ms' => 300000,
-                'clip_end_ms' => 360000,
-            ])->andReturn([
-                'text' => 'No speech detected.',
-                'timestamps' => [],
+        $this->mock(SpeechAudioFilterService::class, function ($mock) use ($segmentPath): void {
+            $mock->shouldReceive('prepare')->once()->andReturn([
+                'speech_detected' => false,
+                'audio' => [
+                    'path' => $segmentPath,
+                    'name' => 'live_00001.wav',
+                    'mime_type' => 'audio/wav',
+                    'size' => filesize($segmentPath),
+                    'duration_ms' => 60000,
+                ],
+                'vad' => [
+                    'has_speech' => false,
+                    'duration_ms' => 60000,
+                    'speech_ms' => 0,
+                    'segments' => [],
+                ],
             ]);
+        });
+
+        $this->mock(SpeechToTextService::class, function ($mock): void {
+            $mock->shouldReceive('transcribe')->never();
         });
 
         try {
@@ -79,6 +91,27 @@ class AudioChunkNoSpeechTest extends TestCase
                 'duration_ms' => 60000,
             ]);
             $mock->shouldReceive('cleanup')->once();
+        });
+
+        $this->mock(SpeechAudioFilterService::class, function ($mock) use ($segmentPath): void {
+            $mock->shouldReceive('prepare')->once()->andReturn([
+                'speech_detected' => true,
+                'audio' => [
+                    'path' => $segmentPath,
+                    'name' => 'live_00002.wav',
+                    'mime_type' => 'audio/wav',
+                    'size' => filesize($segmentPath),
+                    'duration_ms' => 60000,
+                ],
+                'vad' => [
+                    'has_speech' => true,
+                    'duration_ms' => 60000,
+                    'speech_ms' => 1200,
+                    'segments' => [
+                        ['start_ms' => 0, 'end_ms' => 1200, 'start_seconds' => 0.0, 'end_seconds' => 1.2],
+                    ],
+                ],
+            ]);
         });
 
         $this->mock(SpeechToTextService::class, function ($mock) use ($segmentPath): void {
@@ -136,11 +169,27 @@ class AudioChunkNoSpeechTest extends TestCase
             ]);
         });
 
-        $this->mock(SpeechToTextService::class, function ($mock): void {
-            $mock->shouldReceive('transcribe')->once()->andReturn([
-                'text' => '',
-                'timestamps' => [],
+        $this->mock(SpeechAudioFilterService::class, function ($mock) use ($segmentPath): void {
+            $mock->shouldReceive('prepare')->once()->andReturn([
+                'speech_detected' => false,
+                'audio' => [
+                    'path' => $segmentPath,
+                    'name' => 'chunk_00005.wav',
+                    'mime_type' => 'audio/wav',
+                    'size' => filesize($segmentPath),
+                    'duration_ms' => 60000,
+                ],
+                'vad' => [
+                    'has_speech' => false,
+                    'duration_ms' => 60000,
+                    'speech_ms' => 0,
+                    'segments' => [],
+                ],
             ]);
+        });
+
+        $this->mock(SpeechToTextService::class, function ($mock): void {
+            $mock->shouldReceive('transcribe')->never();
         });
 
         try {

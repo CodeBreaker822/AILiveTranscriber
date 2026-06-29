@@ -1,11 +1,11 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "AITranscriber APP",
-  "version": "2.0.0-stable",
+  "version": "3.0.0-stablesaver",
   "identifier": "com.jerven.laravel-ai-transcriber",
   "build": {
-    "beforeDevCommand": ".\\php\\php.exe scripts\\clear-dev-port.php 8010 && .\\php\\php.exe artisan serve --host=127.0.0.1 --port=8010",
-    "beforeBuildCommand": ".\\node\\npm.cmd run build:tauri",
+    "beforeDevCommand": "node scripts/dev-local.mjs",
+    "beforeBuildCommand": "node scripts/prepare-desktop.mjs",
     "devUrl": "http://127.0.0.1:8010",
     "frontendDist": "../public"
   },
@@ -28,7 +28,6 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -37,14 +36,14 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../php": "php",
-      "../ffmpeg": "ffmpeg",
+      "../build/vad": "vad",
       "../artisan": "artisan",
       "../composer.json": "composer.json",
       "../app": "app",
       "../bootstrap": "bootstrap",
       "../config": "config",
       "../build/tauri/database/database.sqlite": "database/database.sqlite",
+      "../build/tauri/version.json": "version.json",
       "../database/factories": "database/factories",
       "../database/migrations": "database/migrations",
       "../database/seeders": "database/seeders",

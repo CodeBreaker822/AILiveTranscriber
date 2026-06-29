@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Exceptions\GeminiTranscriptCleanerException;
-use App\Services\GeminiTranscriptCleanerService;
+use App\Exceptions\TranscriptPolisherException;
+use App\Services\TranscriptPolisherService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -13,9 +13,9 @@ class TranscriptFurnishController extends Controller
 {
     private const FURNISH_WINDOW_MS = 5 * 60 * 1000;
 
-    private const GEMINI_REQUEST_INTERVAL_SECONDS = 4;
+    private const POLISH_REQUEST_INTERVAL_SECONDS = 4;
 
-    public function store(Request $request, GeminiTranscriptCleanerService $cleaner): JsonResponse
+    public function store(Request $request, TranscriptPolisherService $polisher): JsonResponse
     {
         @set_time_limit(0);
 
@@ -47,14 +47,14 @@ class TranscriptFurnishController extends Controller
                     'message' => 'polished',
                     'data' => [],
                     'count' => 0,
-                    'gemini_requests' => $requestCount,
+                    'polish_requests' => $requestCount,
                     'window_index' => $windowIndex,
                 ]);
             }
 
             try {
-                $cleaned = $this->furnishWindow($windowChunks, $cleaner, $userId, $categoryName, $instructions, $instructionHash, $requestCount);
-            } catch (GeminiTranscriptCleanerException $exception) {
+                $cleaned = $this->furnishWindow($windowChunks, $polisher, $userId, $categoryName, $instructions, $instructionHash, $requestCount);
+            } catch (TranscriptPolisherException $exception) {
                 return $this->furnishFailure($exception, $categoryName);
             }
 
@@ -62,7 +62,7 @@ class TranscriptFurnishController extends Controller
                 'message' => 'polished',
                 'data' => $cleaned,
                 'count' => count($cleaned),
-                'gemini_requests' => $requestCount,
+                'polish_requests' => $requestCount,
                 'window_index' => $windowIndex,
             ]);
         }
@@ -82,9 +82,9 @@ class TranscriptFurnishController extends Controller
                 try {
                     array_push(
                         $cleaned,
-                        ...$this->furnishWindow($windowChunks, $cleaner, $userId, $categoryName, $instructions, $instructionHash, $requestCount),
+                        ...$this->furnishWindow($windowChunks, $polisher, $userId, $categoryName, $instructions, $instructionHash, $requestCount),
                     );
-                } catch (GeminiTranscriptCleanerException $exception) {
+                } catch (TranscriptPolisherException $exception) {
                     return $this->furnishFailure($exception, $categoryName);
                 }
 
@@ -105,9 +105,9 @@ class TranscriptFurnishController extends Controller
             try {
                 array_push(
                     $cleaned,
-                    ...$this->furnishWindow($windowChunks, $cleaner, $userId, $categoryName, $instructions, $instructionHash, $requestCount),
+                    ...$this->furnishWindow($windowChunks, $polisher, $userId, $categoryName, $instructions, $instructionHash, $requestCount),
                 );
-            } catch (GeminiTranscriptCleanerException $exception) {
+            } catch (TranscriptPolisherException $exception) {
                 return $this->furnishFailure($exception, $categoryName);
             }
         }
@@ -116,7 +116,7 @@ class TranscriptFurnishController extends Controller
             'message' => 'polished',
             'data' => $cleaned,
             'count' => count($cleaned),
-            'gemini_requests' => $requestCount,
+            'polish_requests' => $requestCount,
         ]);
     }
 
@@ -141,7 +141,7 @@ class TranscriptFurnishController extends Controller
 
     private function furnishWindow(
         array $windowChunks,
-        GeminiTranscriptCleanerService $cleaner,
+        TranscriptPolisherService $polisher,
         int $userId,
         string $categoryName,
         string $instructions,
@@ -149,18 +149,19 @@ class TranscriptFurnishController extends Controller
         int &$requestCount,
     ): array {
         if ($this->windowHasText($windowChunks) && $requestCount > 0) {
-            sleep(self::GEMINI_REQUEST_INTERVAL_SECONDS);
+            sleep(self::POLISH_REQUEST_INTERVAL_SECONDS);
         }
 
         $this->removeExistingCleanedChunks($windowChunks);
         $chunksToClean = $windowChunks;
         $result = [
             'chunks' => [],
+            'provider' => null,
             'model' => null,
         ];
 
         if ($chunksToClean !== []) {
-            $result = $cleaner->cleanChunks($this->toGeminiChunks($chunksToClean), [
+            $result = $polisher->polishChunks($this->toPolishChunks($chunksToClean), [
                 'instructions' => $instructions,
             ]);
 
@@ -192,6 +193,7 @@ class TranscriptFurnishController extends Controller
                         'raw_text' => $chunk->translated_text,
                         'clean_text' => $cleanedChunk['text'],
                         'clean_timestamps' => json_encode($cleanedChunk['timestamps']),
+                        'provider' => $result['provider'] ?? null,
                         'model' => $result['model'] ?? null,
                         'instruction_hash' => $instructionHash,
                         'status' => 'cleaned',
@@ -203,6 +205,7 @@ class TranscriptFurnishController extends Controller
             $cleaned[] = $this->cleanedResponseRow($chunk, [
                 'text' => $cleanedChunk['text'],
                 'timestamps' => $cleanedChunk['timestamps'],
+                'provider' => $result['provider'] ?? null,
                 'model' => $result['model'] ?? null,
             ]);
         }
@@ -233,11 +236,12 @@ class TranscriptFurnishController extends Controller
             'range_label' => $chunk->range_label,
             'clean_text' => $cleanedChunk['text'],
             'clean_timestamps' => $cleanedChunk['timestamps'],
+            'provider' => $cleanedChunk['provider'],
             'model' => $cleanedChunk['model'],
         ];
     }
 
-    private function furnishFailure(GeminiTranscriptCleanerException $exception, string $categoryName): JsonResponse
+    private function furnishFailure(TranscriptPolisherException $exception, string $categoryName): JsonResponse
     {
         Log::error('Transcript polishing failed.', [
             'message' => $exception->getMessage(),
@@ -249,7 +253,7 @@ class TranscriptFurnishController extends Controller
         ], 422);
     }
 
-    private function toGeminiChunks(array $chunks): array
+    private function toPolishChunks(array $chunks): array
     {
         return array_map(
             fn ($chunk): array => [

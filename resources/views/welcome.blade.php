@@ -32,6 +32,17 @@
                         </svg>
                         Export
                     </button>
+                    <button type="button" data-log-live class="inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-white transition hover:border-cyan-300/30 hover:bg-cyan-300/10">
+                        <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                            <path d="M8 6h13" />
+                            <path d="M8 12h13" />
+                            <path d="M8 18h13" />
+                            <path d="M3 6h.01" />
+                            <path d="M3 12h.01" />
+                            <path d="M3 18h.01" />
+                        </svg>
+                        Log
+                    </button>
                 </div>
 
                 <div data-stored-list class="min-h-0 flex-1 overflow-y-auto px-4 py-2">
@@ -109,7 +120,6 @@
                         <div class="flex min-w-0 items-center gap-2 text-[0.72rem]">
                             <p class="shrink-0 uppercase tracking-[0.18em] text-slate-400">Now</p>
                             <p data-audio-active-name class="shrink-0 font-semibold text-white">Ready</p>
-                            <p data-audio-active-meta class="min-w-0 flex-1 truncate text-slate-400">No audio yet</p>
                             <p data-audio-active-note class="shrink-0 uppercase tracking-[0.16em] text-cyan-300"></p>
                             <p data-audio-progress-label class="shrink-0 font-semibold text-white">00:00:00</p>
                         </div>

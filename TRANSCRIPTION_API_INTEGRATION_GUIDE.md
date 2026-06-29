@@ -67,6 +67,8 @@ Example response:
   "expired": false,
   "rate_limited": false,
   "app_name": "Standalone Transcriber",
+  "version": "1.0.4",
+  "notes": "Fixed transcription upload and added Groq fallback.",
   "rate_limit": {
     "limit_per_minute": 120,
     "retry_after": 0
@@ -147,10 +149,25 @@ Example response:
 ```
 
 Notes:
+- `version` and `notes` describe the current downloadable desktop update.
 - `providers.transcription[].connected` should be `true` before the consuming app offers that provider.
 - `apis.transcribe.allowed` must be `true` before sending audio clips.
 - `apis.polish.allowed` must be `true` before sending transcript text to Gemini.
 - The `languages` array in the response is the complete selectable language list for that provider model.
+
+## Download Desktop Update
+
+```http
+GET /api/transcribe/update/zipfile
+Authorization: Bearer LICENSE_KEY
+Accept: application/zip
+```
+
+The response is the ZIP advertised by `version` and `notes` in the license status
+response. The desktop app compares the version text exactly with its bundled
+`version.json`, downloads the ZIP when they differ, and installs it after stopping
+the running application. The ZIP must not contain `.env`, `storage`, or
+`database/database.sqlite`.
 
 ## Transcribe Audio
 

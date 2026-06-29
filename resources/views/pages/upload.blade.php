@@ -32,6 +32,17 @@
                         </svg>
                         Export
                     </button>
+                    <button type="button" data-log-upload class="inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-white transition hover:border-cyan-300/30 hover:bg-cyan-300/10">
+                        <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                            <path d="M8 6h13" />
+                            <path d="M8 12h13" />
+                            <path d="M8 18h13" />
+                            <path d="M3 6h.01" />
+                            <path d="M3 12h.01" />
+                            <path d="M3 18h.01" />
+                        </svg>
+                        Log
+                    </button>
                 </div>
 
                 <div data-upload-transcript-list class="min-h-0 flex-1 overflow-y-auto px-4 py-2">
@@ -45,7 +56,7 @@
                 <section class="relative z-50 flex min-h-0 flex-col overflow-visible rounded-lg border border-white/10 bg-slate-950/70 p-2.5 shadow-[0_18px_60px_rgba(0,0,0,0.32)] backdrop-blur-xl">
                     <h1 class="text-xl font-semibold tracking-tight text-white">Audio to Text Converter</h1>
 
-                    <form class="mt-2 space-y-2" action="#" method="post" enctype="multipart/form-data">
+                    <form data-upload-form class="mt-2 space-y-2" action="#" method="post" enctype="multipart/form-data">
                         <div class="grid grid-cols-3 gap-2">
                             <div class="relative z-50">
                                 <label class="block">
@@ -104,7 +115,6 @@
                         <div class="flex min-w-0 items-center gap-2 text-[0.72rem]">
                             <p class="shrink-0 uppercase tracking-[0.18em] text-slate-400">Now</p>
                             <p data-upload-status class="shrink-0 font-semibold text-white">Ready</p>
-                            <p class="min-w-0 flex-1 truncate text-slate-400">No audio yet</p>
                             <p data-upload-progress-label class="shrink-0 uppercase tracking-[0.16em] text-cyan-300">0 / 0 sections</p>
                             <p data-upload-progress-percent class="shrink-0 font-semibold text-white">0%</p>
                         </div>

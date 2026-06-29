@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Services\GeminiTranscriptCleanerService;
+use App\Services\TranscriptPolisherService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -32,8 +32,8 @@ class TranscriptFurnishControllerTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        $this->mock(GeminiTranscriptCleanerService::class, function ($mock): void {
-            $mock->shouldReceive('cleanChunks')->never();
+        $this->mock(TranscriptPolisherService::class, function ($mock): void {
+            $mock->shouldReceive('polishChunks')->never();
         });
 
         $response = $this->postJson('/transcripts/furnish', [
@@ -73,8 +73,8 @@ class TranscriptFurnishControllerTest extends TestCase
 
         $run = 0;
 
-        $this->mock(GeminiTranscriptCleanerService::class, function ($mock) use ($audioChunkId, &$run): void {
-            $mock->shouldReceive('cleanChunks')
+        $this->mock(TranscriptPolisherService::class, function ($mock) use ($audioChunkId, &$run): void {
+            $mock->shouldReceive('polishChunks')
                 ->twice()
                 ->andReturnUsing(function (array $chunks, array $options) use ($audioChunkId, &$run): array {
                     $run++;
@@ -85,6 +85,7 @@ class TranscriptFurnishControllerTest extends TestCase
                             'text' => "Polished run {$run}",
                             'timestamps' => [],
                         ]],
+                        'provider' => 'openai',
                         'model' => 'test-model',
                     ];
                 });
@@ -102,6 +103,8 @@ class TranscriptFurnishControllerTest extends TestCase
         $this->assertDatabaseHas('clean_transcript_chunks', [
             'audio_chunk_id' => $audioChunkId,
             'clean_text' => 'Polished run 2',
+            'provider' => 'openai',
+            'model' => 'test-model',
             'instruction_hash' => hash('sha256', 'Correct punctuation.'),
         ]);
 

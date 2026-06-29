@@ -36,22 +36,22 @@ class ServiceUserMessage
 
     public static function cleanerFailed(): string
     {
-        return 'Gemini could not clean the transcript. Please try again.';
+        return 'Transcript polisher could not clean the transcript. Please try again.';
     }
 
     public static function emptyCleanerResponse(): string
     {
-        return 'Gemini could not prepare a cleaned transcript. Please try again.';
+        return 'Transcript polisher could not prepare a cleaned transcript. Please try again.';
     }
 
     public static function invalidCleanerResponse(): string
     {
-        return 'Gemini returned a response AITranscriber could not use. Please try again.';
+        return 'Transcript polisher returned a response AITranscriber could not use. Please try again.';
     }
 
     public static function cleanerMissingChunks(): string
     {
-        return 'Gemini did not finish cleaning every transcript section. Please try again.';
+        return 'Transcript polisher did not finish cleaning every transcript section. Please try again.';
     }
 
     public static function audioReadFailed(): string

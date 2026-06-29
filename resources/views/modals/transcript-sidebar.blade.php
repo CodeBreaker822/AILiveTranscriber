@@ -36,6 +36,17 @@
                     </svg>
                     Export
                 </button>
+                <button type="button" data-log-live class="inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:border-cyan-300/30 hover:bg-cyan-300/10">
+                    <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <path d="M8 6h13" />
+                        <path d="M8 12h13" />
+                        <path d="M8 18h13" />
+                        <path d="M3 6h.01" />
+                        <path d="M3 12h.01" />
+                        <path d="M3 18h.01" />
+                    </svg>
+                    Log
+                </button>
             @else
                 <button type="button" data-furnish-upload class="inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-emerald-300/20 bg-emerald-300/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-100 transition hover:border-emerald-300/30 hover:bg-emerald-300/15">
                     Polish
@@ -51,6 +62,17 @@
                         <path d="M5 21h14" />
                     </svg>
                     Export
+                </button>
+                <button type="button" data-log-upload class="inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:border-cyan-300/30 hover:bg-cyan-300/10">
+                    <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <path d="M8 6h13" />
+                        <path d="M8 12h13" />
+                        <path d="M8 18h13" />
+                        <path d="M3 6h.01" />
+                        <path d="M3 12h.01" />
+                        <path d="M3 18h.01" />
+                    </svg>
+                    Log
                 </button>
             @endif
         </div>

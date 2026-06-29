@@ -17,6 +17,7 @@
     "allow-open-external-url",
     "allow-save-text-export",
     "allow-save-text-export-with-dialog",
-    "allow-choose-audio-file"
+    "allow-choose-audio-file",
+    "allow-install-update"
   ]
 }

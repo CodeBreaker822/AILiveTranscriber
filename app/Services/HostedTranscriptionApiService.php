@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-use App\Exceptions\GeminiTranscriptCleanerException;
+use App\Exceptions\TranscriptPolisherException;
 use App\Exceptions\SpeechToTextException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
@@ -33,6 +33,34 @@ class HostedTranscriptionApiService
         $payload = $response->json();
 
         return is_array($payload) ? $payload : [];
+    }
+
+    public function serverIsReachable(): bool
+    {
+        try {
+            Http::acceptJson()
+                ->connectTimeout(3)
+                ->timeout(5)
+                ->get($this->settings->apiBaseUrl());
+
+            // Any HTTP response means the hosted server is reachable. This quiet
+            // probe intentionally sends no license key and inspects no content.
+            return true;
+        } catch (ConnectionException) {
+            return false;
+        }
+    }
+
+    public function downloadUpdateArchive(): Response
+    {
+        try {
+            return $this->request()
+                ->timeout(600)
+                ->withOptions(['stream' => true])
+                ->get($this->url('/transcribe/update/zipfile'));
+        } catch (ConnectionException $exception) {
+            throw new SpeechToTextException(ServiceUserMessage::cannotReachProvider('update server'), 0, $exception);
+        }
     }
 
     /**
@@ -93,17 +121,19 @@ class HostedTranscriptionApiService
     }
 
     /**
-     * @return array{text: string, timestamps: array<int, array<string, mixed>>, model: string}
+     * @return array{text: string, timestamps: array<int, array<string, mixed>>, provider: string|null, model: string|null}
      */
     public function polish(string $text, array $timestamps = [], array $options = []): array
     {
         $text = trim($text);
+        $polisher = $this->polisherSelection();
 
         if ($text === '') {
             return [
                 'text' => '',
                 'timestamps' => [],
-                'model' => $this->polishModel(),
+                'provider' => $polisher['provider'],
+                'model' => $polisher['model'],
             ];
         }
 
@@ -116,16 +146,18 @@ class HostedTranscriptionApiService
         return [
             'text' => (string) ($response['text'] ?? ''),
             'timestamps' => is_array($response['timestamps'] ?? null) ? array_values(array_filter($response['timestamps'], 'is_array')) : [],
-            'model' => (string) ($response['model'] ?? $this->polishModel()),
+            'provider' => $this->nullableString($response['provider'] ?? $polisher['provider']),
+            'model' => $this->nullableString($response['model'] ?? $polisher['model']),
         ];
     }
 
     /**
      * @param  array<int, array{id: int, range_label?: string|null, text: string, timestamps: array<int, array<string, mixed>>}>  $chunks
-     * @return array{chunks: array<int, array{audio_chunk_id: int, text: string, timestamps: array<int, array<string, mixed>>}>, model: string}
+     * @return array{chunks: array<int, array{audio_chunk_id: int, text: string, timestamps: array<int, array<string, mixed>>}>, provider: string|null, model: string|null}
      */
     public function polishChunks(array $chunks, array $options = []): array
     {
+        $polisher = $this->polisherSelection();
         $payloadChunks = array_values(array_map(
             fn (array $chunk): array => [
                 'audio_chunk_id' => (int) $chunk['id'],
@@ -147,7 +179,8 @@ class HostedTranscriptionApiService
                     ],
                     $payloadChunks,
                 ),
-                'model' => $this->polishModel(),
+                'provider' => $polisher['provider'],
+                'model' => $polisher['model'],
             ];
         }
 
@@ -165,7 +198,8 @@ class HostedTranscriptionApiService
                 ],
                 array_filter($response['chunks'] ?? [], 'is_array'),
             )),
-            'model' => (string) ($response['model'] ?? $this->polishModel()),
+            'provider' => $this->nullableString($response['provider'] ?? $polisher['provider']),
+            'model' => $this->nullableString($response['model'] ?? $polisher['model']),
         ];
     }
 
@@ -176,13 +210,13 @@ class HostedTranscriptionApiService
                 ->withHeaders(['Content-Type' => 'application/json'])
                 ->post($this->url($path), $payload);
         } catch (SpeechToTextException $exception) {
-            throw new GeminiTranscriptCleanerException($exception->getMessage(), 0, $exception);
+            throw new TranscriptPolisherException($exception->getMessage(), 0, $exception);
         } catch (ConnectionException $exception) {
-            throw new GeminiTranscriptCleanerException(ServiceUserMessage::cannotReachProvider('transcription server'), 0, $exception);
+            throw new TranscriptPolisherException(ServiceUserMessage::cannotReachProvider('transcription server'), 0, $exception);
         }
 
         if ($response->failed()) {
-            throw new GeminiTranscriptCleanerException($this->messageForResponse($response, ServiceUserMessage::cleanerFailed()), $response->status());
+            throw new TranscriptPolisherException($this->messageForResponse($response, ServiceUserMessage::cleanerFailed()), $response->status());
         }
 
         $decoded = $response->json();
@@ -268,11 +302,51 @@ class HostedTranscriptionApiService
         ];
     }
 
-    private function polishModel(): string
+    /**
+     * @return array{provider: string|null, model: string|null}
+     */
+    private function polisherSelection(): array
     {
-        $models = $this->settings->licenseStatus()['providers']['polishing'][0]['models'] ?? [];
-        $model = is_array($models) ? ($models[0]['id'] ?? null) : null;
+        $providers = $this->settings->licenseStatus()['providers']['polishing'] ?? [];
 
-        return is_string($model) && $model !== '' ? $model : 'gemini-3.1-flash-lite';
+        if (! is_array($providers)) {
+            return [
+                'provider' => null,
+                'model' => null,
+            ];
+        }
+
+        foreach ($providers as $provider) {
+            if (! is_array($provider)) {
+                continue;
+            }
+
+            if (! ($provider['configured'] ?? false) || ! ($provider['enabled'] ?? false) || ! ($provider['connected'] ?? false)) {
+                continue;
+            }
+
+            $models = is_array($provider['models'] ?? null) ? $provider['models'] : [];
+
+            return [
+                'provider' => $this->nullableString($provider['provider'] ?? null),
+                'model' => $this->nullableString($models[0]['id'] ?? null),
+            ];
+        }
+
+        return [
+            'provider' => null,
+            'model' => null,
+        ];
+    }
+
+    private function nullableString(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $value = trim($value);
+
+        return $value === '' ? null : $value;
     }
 }

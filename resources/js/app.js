@@ -89,9 +89,10 @@ $(function () {
         const uploadUrl = String($body.attr('data-upload-audio-url') || '');
         const audioChunkUrl = String($body.attr('data-audio-chunk-url') || '');
         const storedUrl = String($body.attr('data-stored-url') || '');
+        const vadLogUrl = String($body.attr('data-vad-log-url') || '');
         const furnishUrl = String($body.attr('data-furnish-url') || '');
         const defaultUserId = Number($body.attr('data-default-user-id') || 1);
-        const $form = $('form');
+        const $form = $('[data-upload-form]');
         const $categoryInput = $('[data-upload-category]');
         const $categorySuggestions = $('[data-upload-category-suggestions]');
         const $languageInput = $('[data-upload-language]');
@@ -116,6 +117,7 @@ $(function () {
         const $transcriptList = $('[data-upload-transcript-list]');
         const $exportButton = $('[data-export-upload]');
         const $exportMode = $('[data-export-upload-mode]');
+        const $logButton = $('[data-log-upload]');
         const $furnishButton = $('[data-furnish-upload]');
         const $cleanerState = $('[data-cleaner-state]');
         const $cleanerProgressLabel = $('[data-cleaner-progress-label]');
@@ -143,6 +145,7 @@ $(function () {
         let uploadCleanedCategoryName = '';
         let activeUploadAudio = null;
         let activeUploadAudioId = null;
+        let uploadShowingVadLogs = false;
 
         const formatClock = (milliseconds) => {
             const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
@@ -168,6 +171,8 @@ $(function () {
 
             return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[index]}`;
         };
+
+        const formatRelativeClock = (milliseconds) => `+${formatClock(milliseconds)}`;
 
         const getChunkLengthMs = () => Number($chunkSize.val() || 60) * 1000;
 
@@ -600,6 +605,110 @@ $(function () {
                 .join('\n\n');
 
             downloadTextFile(`${slugify(selectedCategory || selectedFile?.name)}-${useCleaned ? 'cleaned' : 'raw'}-transcription.txt`, content);
+        };
+
+        const renderVadLogs = (logs, categoryName) => {
+            uploadShowingVadLogs = true;
+            $transcriptBadge.text(String(logs.length));
+
+            if (!logs.length) {
+                $transcriptList.html(`
+                    <div class="w-full py-4">
+                        <p class="text-sm text-slate-200">No processing logs found for ${escapeHtml(categoryName)}.</p>
+                    </div>
+                `);
+                return;
+            }
+
+            $transcriptList.html(logs.map((log) => {
+                const segments = Array.isArray(log.speech_segments) ? log.speech_segments : [];
+                const statusClasses = log.speech_detected
+                    ? 'border-emerald-300/20 bg-emerald-300/10 text-emerald-100'
+                    : 'border-amber-300/20 bg-amber-300/10 text-amber-100';
+                const statusLabel = log.speech_detected ? 'Speech' : 'No speech';
+                const segmentHtml = segments.length
+                    ? segments.map((segment, index) => `
+                        <div class="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2">
+                            <p class="text-[0.66rem] font-semibold uppercase tracking-[0.18em] text-cyan-300">Segment ${index + 1}</p>
+                            <p class="mt-1 text-xs text-white">${formatClock(Number(segment.absolute_start_ms || 0))}-${formatClock(Number(segment.absolute_end_ms || 0))}</p>
+                            <p class="mt-0.5 text-[0.68rem] text-slate-400">Inside clip ${formatRelativeClock(Number(segment.start_ms || 0))}-${formatRelativeClock(Number(segment.end_ms || 0))}</p>
+                        </div>
+                    `).join('')
+                    : '<p class="text-xs text-slate-400">Hosted transcription skipped for this range.</p>';
+
+                return `
+                    <article class="w-full border-b border-white/8 py-2.5 last:border-b-0">
+                        <div class="flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                                <p class="text-xs font-medium leading-5 tracking-[0.14em] text-cyan-300">${escapeHtml(log.range_label || '')}</p>
+                                <p class="mt-0.5 text-[0.68rem] text-slate-400">Clip ${Number(log.clip_index || 0)} · ${formatClock(Number(log.clip_start_ms || 0))}-${formatClock(Number(log.clip_end_ms || 0))}</p>
+                            </div>
+                            <span class="rounded-lg border px-2 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.16em] ${statusClasses}">${statusLabel}</span>
+                        </div>
+                        <div class="mt-2 grid gap-2 sm:grid-cols-2">
+                            ${segmentHtml}
+                        </div>
+                        <p class="mt-2 text-[0.68rem] text-slate-500">Speech ${formatClock(Number(log.speech_duration_ms || 0))} · Filtered ${formatBytes(Number(log.filtered_size_bytes || 0))}</p>
+                    </article>
+                `;
+            }).join(''));
+        };
+
+        const setUploadLogButtonLabel = () => {
+            $logButton.prop('disabled', false).html(uploadShowingVadLogs ? `
+                <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M15 18l-6-6 6-6" />
+                </svg>
+                Transcript
+            ` : `
+                <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M8 6h13" />
+                    <path d="M8 12h13" />
+                    <path d="M8 18h13" />
+                    <path d="M3 6h.01" />
+                    <path d="M3 12h.01" />
+                    <path d="M3 18h.01" />
+                </svg>
+                Log
+            `);
+        };
+
+        const loadVadLogs = () => {
+            if (uploadShowingVadLogs) {
+                uploadShowingVadLogs = false;
+                setUploadLogButtonLabel();
+                renderTranscript();
+                return;
+            }
+
+            const categoryName = getUploadCategory();
+
+            if (!categoryName) {
+                notifyError('Choose a project name before loading processing logs.');
+                return;
+            }
+
+            if (!vadLogUrl) {
+                notifyError('Processing logs are unavailable.');
+                return;
+            }
+
+            $logButton.prop('disabled', true).text('Loading');
+
+            $.getJSON(vadLogUrl, {
+                category_name: categoryName,
+                source_type: 'upload',
+            })
+                .done((response) => {
+                    renderVadLogs(Array.isArray(response?.data) ? response.data : [], categoryName);
+                    setUploadLogButtonLabel();
+                })
+                .fail((xhr) => {
+                    notifyError(String(xhr?.responseJSON?.message || 'Could not load processing logs.'));
+                })
+                .always(() => {
+                    setUploadLogButtonLabel();
+                });
         };
 
         const mergeCleanedRows = (rows) => {
@@ -1060,6 +1169,7 @@ $(function () {
                     name: selected.name || 'audio',
                     size: Number(selected.size || 0),
                     localPath: selected.path || '',
+                    durationMs: Number(selected.duration_ms || 0),
                 });
             } catch (error) {
                 notifyError(String(error || '').trim() || 'Could not choose this audio file.');
@@ -1087,7 +1197,7 @@ $(function () {
             }, { once: true });
 
             audio.addEventListener('error', () => {
-                selectedDurationMs = 0;
+            selectedDurationMs = Number(file?.durationMs || 0);
                 syncPlan();
             }, { once: true });
         };
@@ -1107,11 +1217,28 @@ $(function () {
             selectUploadFile(file);
         });
 
+        $form.on('submit', function (event) {
+            event.preventDefault();
+        });
+
         $categoryInput.on('input change', function () {
             syncTranscriptCategory();
             renderTranscript();
             updateCleanerProgress();
             refreshUploadCategorySuggestions();
+        });
+
+        $categoryInput.on('keydown', function (event) {
+            if (event.key !== 'Enter') {
+                return;
+            }
+
+            event.preventDefault();
+            closeUploadCategorySuggestions();
+            syncTranscriptCategory();
+            renderTranscript();
+            updateCleanerProgress();
+            $categoryInput.trigger('blur');
         });
 
         $categoryInput.on('focus click', function () {
@@ -1218,6 +1345,8 @@ $(function () {
 
                 currentSessionId = sessionId;
                 currentCategoryName = categoryName;
+                selectedDurationMs = Number(response?.data?.duration_ms || selectedDurationMs || 0);
+                syncPlan();
                 preparedSections = sections.map((section, index) => ({
                     index: Number(section.index || index + 1),
                     startMs: Number(section.start_ms || 0),
@@ -1347,6 +1476,7 @@ $(function () {
         };
 
         $exportButton.on('click', exportTranscript);
+        $logButton.on('click', loadVadLogs);
         $exportMode.on('change', renderTranscript);
         $furnishButton.on('click', furnishTranscript);
 
@@ -1448,12 +1578,12 @@ $(function () {
     const $storedList = $('[data-stored-list]');
     const $liveTranscriptBadge = $('[data-live-transcript-badge]');
     const $exportLive = $('[data-export-live]');
+    const $logLive = $('[data-log-live]');
     const $categoryInput = $('[data-category-input]');
     const $categorySuggestions = $('[data-category-suggestions]');
     const $languageInput = $('[data-language-input]');
     const $currentCategory = $('[data-current-category]');
     const $activeName = $('[data-audio-active-name]');
-    const $activeMeta = $('[data-audio-active-meta]');
     const $activeNote = $('[data-audio-active-note]');
     const $progress = $('[data-audio-progress]');
     const $progressLabel = $('[data-audio-progress-label]');
@@ -1468,6 +1598,7 @@ $(function () {
 
     const uploadUrl = String($body.data('upload-url') || '');
     const storedUrl = String($body.data('stored-url') || '');
+    const vadLogUrl = String($body.data('vad-log-url') || '');
     const playUrlBase = String($body.data('play-url-base') || '');
     const deleteUrlBase = String($body.data('delete-url-base') || '');
     const defaultUserId = Number($body.data('default-user-id') || 1);
@@ -1505,6 +1636,7 @@ $(function () {
     let uploadPaused = false;
     let liveCleanerStatus = 'Waiting';
     let activeCategoryName = String($body.data('default-category-name') || '').trim();
+    let liveShowingVadLogs = false;
 
     const formatClock = (milliseconds) => {
         const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
@@ -1520,6 +1652,20 @@ $(function () {
     };
 
     const formatClipRange = (startMs, endMs) => `${formatClock(startMs)}-${formatClock(endMs)}`;
+
+    const formatBytes = (bytes) => {
+        if (!Number.isFinite(bytes) || bytes <= 0) {
+            return '0 MB';
+        }
+
+        const units = ['B', 'KB', 'MB', 'GB'];
+        const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+        const value = bytes / (1024 ** index);
+
+        return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[index]}`;
+    };
+
+    const formatRelativeClock = (milliseconds) => `+${formatClock(milliseconds)}`;
 
     const slugify = (value) => String(value || 'transcription')
         .trim()
@@ -1684,6 +1830,107 @@ $(function () {
             .join('\n\n');
 
         downloadTextFile(`${slugify(selectedCategory)}-${useCleaned ? 'cleaned' : 'raw'}-transcription.txt`, content);
+    };
+
+    const renderVadLogs = (logs, categoryName) => {
+        liveShowingVadLogs = true;
+        $liveTranscriptBadge.text(String(logs.length));
+
+        if (!logs.length) {
+            $storedList.html(`
+                <div class="w-full py-4">
+                    <p class="text-sm text-slate-200">No processing logs found for ${escapeHtml(categoryName)}.</p>
+                </div>
+            `);
+            return;
+        }
+
+        $storedList.html(logs.map((log) => {
+            const segments = Array.isArray(log.speech_segments) ? log.speech_segments : [];
+            const statusClasses = log.speech_detected
+                ? 'border-emerald-300/20 bg-emerald-300/10 text-emerald-100'
+                : 'border-amber-300/20 bg-amber-300/10 text-amber-100';
+            const statusLabel = log.speech_detected ? 'Speech' : 'No speech';
+            const segmentHtml = segments.length
+                ? segments.map((segment, index) => `
+                    <div class="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2">
+                        <p class="text-[0.66rem] font-semibold uppercase tracking-[0.18em] text-cyan-300">Segment ${index + 1}</p>
+                        <p class="mt-1 text-xs text-white">${formatClock(Number(segment.absolute_start_ms || 0))}-${formatClock(Number(segment.absolute_end_ms || 0))}</p>
+                        <p class="mt-0.5 text-[0.68rem] text-slate-400">Inside clip ${formatRelativeClock(Number(segment.start_ms || 0))}-${formatRelativeClock(Number(segment.end_ms || 0))}</p>
+                    </div>
+                `).join('')
+                : '<p class="text-xs text-slate-400">Hosted transcription skipped for this range.</p>';
+
+            return `
+                <article class="w-full border-b border-white/8 py-2.5 last:border-b-0">
+                    <div class="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                            <p class="text-xs font-medium leading-5 tracking-[0.14em] text-cyan-300">${escapeHtml(log.range_label || '')}</p>
+                            <p class="mt-0.5 text-[0.68rem] text-slate-400">Clip ${Number(log.clip_index || 0)} · ${formatClock(Number(log.clip_start_ms || 0))}-${formatClock(Number(log.clip_end_ms || 0))}</p>
+                        </div>
+                        <span class="rounded-lg border px-2 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.16em] ${statusClasses}">${statusLabel}</span>
+                    </div>
+                    <div class="mt-2 grid gap-2 sm:grid-cols-2">
+                        ${segmentHtml}
+                    </div>
+                    <p class="mt-2 text-[0.68rem] text-slate-500">Speech ${formatClock(Number(log.speech_duration_ms || 0))} · Filtered ${formatBytes(Number(log.filtered_size_bytes || 0))}</p>
+                </article>
+            `;
+        }).join(''));
+    };
+
+    const restoreLogButton = () => {
+        $logLive.prop('disabled', false).html(liveShowingVadLogs ? `
+            <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M15 18l-6-6 6-6" />
+            </svg>
+            Transcript
+        ` : `
+            <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M8 6h13" />
+                <path d="M8 12h13" />
+                <path d="M8 18h13" />
+                <path d="M3 6h.01" />
+                <path d="M3 12h.01" />
+                <path d="M3 18h.01" />
+            </svg>
+            Log
+        `);
+    };
+
+    const loadVadLogs = () => {
+        if (liveShowingVadLogs) {
+            liveShowingVadLogs = false;
+            restoreLogButton();
+            renderStoredList();
+            return;
+        }
+
+        const categoryName = getCategoryName();
+
+        if (!categoryName) {
+            notifyError('Choose a project name before loading processing logs.');
+            return;
+        }
+
+        if (!vadLogUrl) {
+            notifyError('Processing logs are unavailable.');
+            return;
+        }
+
+        $logLive.prop('disabled', true).text('Loading');
+
+        $.getJSON(vadLogUrl, {
+            category_name: categoryName,
+            source_type: 'live',
+        })
+            .done((response) => {
+                renderVadLogs(Array.isArray(response?.data) ? response.data : [], categoryName);
+            })
+            .fail((xhr) => {
+                notifyError(String(xhr?.responseJSON?.message || 'Could not load processing logs.'));
+            })
+            .always(restoreLogButton);
     };
 
     const furnishStoredTranscription = async () => {
@@ -1974,7 +2221,6 @@ $(function () {
         $playIcon.removeClass('hidden');
         $stopIcon.addClass('hidden');
         $activeName.text('Ready');
-        $activeMeta.text('No audio yet');
         $activeNote.text('');
         $progress.css('width', '0%');
         $progressLabel.text('00:00:00');
@@ -1989,7 +2235,6 @@ $(function () {
         $caption.text('Stop recording').removeClass('text-white').addClass('text-rose-50');
         $playIcon.addClass('hidden');
         $stopIcon.removeClass('hidden');
-        $activeMeta.text('Live');
         $categoryInput.prop('disabled', true);
         $languageInput.prop('disabled', true);
         syncRecordButtonState();
@@ -2584,7 +2829,6 @@ $(function () {
         $progress.css('width', `${percent}%`);
         $progressLabel.text(formatClock(Date.now() - sessionStartedAt));
         $activeName.text('Recording');
-        $activeMeta.text('Live');
         $activeNote.text(clipRange);
     };
 
@@ -2664,7 +2908,6 @@ $(function () {
                 $progress.css('width', '0%');
                 $progressLabel.text('00:00:00');
                 $activeName.text('Ready');
-                $activeMeta.text('No audio yet');
                 $activeNote.text('');
 
                 if (stream) {
@@ -2783,6 +3026,25 @@ $(function () {
         refreshCategorySuggestions();
     });
 
+    $categoryInput.on('keydown', function (event) {
+        if (event.key !== 'Enter') {
+            return;
+        }
+
+        event.preventDefault();
+
+        if (isRecording) {
+            return;
+        }
+
+        activeCategoryName = getCategoryName();
+        liveCleanerStatus = 'Waiting';
+        closeCategorySuggestions();
+        syncCategoryUi();
+        renderStoredList();
+        $categoryInput.trigger('blur');
+    });
+
     $categoryInput.on('focus click', function () {
         if (!isRecording) {
             openCategorySuggestions();
@@ -2853,6 +3115,7 @@ $(function () {
     });
 
     $exportLive.on('click', exportStoredTranscription);
+    $logLive.on('click', loadVadLogs);
     $('[data-export-live-mode]').on('change', renderStoredList);
     $('[data-furnish-live]').on('click', furnishStoredTranscription);
 

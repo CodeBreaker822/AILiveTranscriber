@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Exceptions\SpeechToTextException;
 use App\Services\AudioFileChunkerService;
 use App\Services\ServiceUserMessage;
+use App\Services\SpeechAudioFilterService;
 use App\Services\SpeechToTextService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response;
@@ -64,7 +65,7 @@ class AudioChunkController extends Controller
 
     private function sourceType(?string $originalName): string
     {
-        return preg_match('/^chunk_\d+\.wav$/', (string) $originalName) === 1
+        return preg_match('/^chunk_\d+(?:-speech)?\.wav$/', (string) $originalName) === 1
             ? 'upload'
             : 'live';
     }
@@ -73,10 +74,11 @@ class AudioChunkController extends Controller
         Request $request,
         SpeechToTextService $speechToText,
         AudioFileChunkerService $chunker,
+        SpeechAudioFilterService $speechFilter,
     ): JsonResponse
     {
         if ($request->filled('upload_session_id')) {
-            return $this->storeUploadedSection($request, $speechToText, $chunker);
+            return $this->storeUploadedSection($request, $speechToText, $chunker, $speechFilter);
         }
 
         $validated = $request->validate([
@@ -98,7 +100,23 @@ class AudioChunkController extends Controller
 
         try {
             $preparedClip = $chunker->prepareLiveClip($file, (int) $validated['clip_index']);
-            $transcription = $speechToText->transcribe($preparedClip['path'], [
+            $speechAudio = $speechFilter->prepare($preparedClip, $this->vadContext($validated, $userId, $categoryName, 'live'));
+
+            if (! $speechAudio['speech_detected']) {
+                if (is_array($preparedClip) && isset($preparedClip['directory'])) {
+                    $chunker->cleanup((string) $preparedClip['directory']);
+                }
+
+                return response()->json([
+                    'message' => 'skipped',
+                    'data' => $this->skippedResponseData($validated, 'live', [
+                        'vad' => $speechAudio['vad'],
+                    ]),
+                ]);
+            }
+
+            $transcriptionAudio = $speechAudio['audio'];
+            $transcription = $speechToText->transcribe($transcriptionAudio['path'], [
                 'language_code' => $validated['language_code'] ?? 'multi',
                 'clip_index' => (int) $validated['clip_index'],
                 'clip_start_ms' => (int) $validated['clip_start_ms'],
@@ -143,20 +161,12 @@ class AudioChunkController extends Controller
 
             return response()->json([
                 'message' => 'skipped',
-                'data' => [
-                    'skipped' => true,
-                    'reason' => 'no_speech_detected',
-                    'source_type' => 'live',
-                    'clip_index' => (int) $validated['clip_index'],
-                    'clip_start_ms' => (int) $validated['clip_start_ms'],
-                    'clip_end_ms' => (int) $validated['clip_end_ms'],
-                    'range_label' => $validated['range_label'],
-                    'duration_ms' => (int) $validated['duration_ms'],
-                ],
+                'data' => $this->skippedResponseData($validated, 'live'),
             ]);
         }
 
-        $contents = is_array($preparedClip) ? file_get_contents($preparedClip['path']) : false;
+        $storedAudio = $transcriptionAudio ?? $preparedClip;
+        $contents = is_array($storedAudio) ? file_get_contents($storedAudio['path']) : false;
 
         if ($contents === false) {
             if (is_array($preparedClip) && isset($preparedClip['directory'])) {
@@ -176,9 +186,9 @@ class AudioChunkController extends Controller
             'clip_end_ms' => (int) $validated['clip_end_ms'],
             'range_label' => $validated['range_label'],
             'duration_ms' => (int) $validated['duration_ms'],
-            'mime_type' => $preparedClip['mime_type'],
-            'original_name' => $preparedClip['name'],
-            'file_size_bytes' => $preparedClip['size'],
+            'mime_type' => $storedAudio['mime_type'],
+            'original_name' => $storedAudio['name'],
+            'file_size_bytes' => $storedAudio['size'],
             'audio_blob' => $contents,
             'translated_text' => $transcription['text'],
             'transcription_timestamps' => json_encode($transcription['timestamps']),
@@ -215,6 +225,7 @@ class AudioChunkController extends Controller
         Request $request,
         SpeechToTextService $speechToText,
         AudioFileChunkerService $chunker,
+        SpeechAudioFilterService $speechFilter,
     ): JsonResponse {
         @set_time_limit(0);
 
@@ -237,8 +248,23 @@ class AudioChunkController extends Controller
                 (int) $validated['clip_start_ms'],
                 (int) $validated['duration_ms'],
             );
+            $userId = (int) ($validated['user_id'] ?? 1);
+            $categoryName = trim((string) $validated['category_name']);
+            $speechAudio = $speechFilter->prepare($segment, $this->vadContext($validated, $userId, $categoryName, 'upload'));
 
-            $transcription = $speechToText->transcribe($segment['path'], [
+            if (! $speechAudio['speech_detected']) {
+                return response()->json([
+                    'message' => 'skipped',
+                    'data' => $this->skippedResponseData($validated, 'upload', [
+                        'prepared_duration_ms' => (int) $segment['duration_ms'],
+                        'prepared_file_size_bytes' => (int) $segment['size'],
+                        'vad' => $speechAudio['vad'],
+                    ]),
+                ]);
+            }
+
+            $transcriptionAudio = $speechAudio['audio'];
+            $transcription = $speechToText->transcribe($transcriptionAudio['path'], [
                 'language_code' => $validated['language_code'] ?? 'multi',
                 'clip_index' => (int) $validated['clip_index'],
                 'clip_start_ms' => (int) $validated['clip_start_ms'],
@@ -281,22 +307,15 @@ class AudioChunkController extends Controller
         if ($this->isNoSpeechTranscript($transcription['text'] ?? '')) {
             return response()->json([
                 'message' => 'skipped',
-                'data' => [
-                    'skipped' => true,
-                    'reason' => 'no_speech_detected',
-                    'source_type' => 'upload',
-                    'clip_index' => (int) $validated['clip_index'],
-                    'clip_start_ms' => (int) $validated['clip_start_ms'],
-                    'clip_end_ms' => (int) $validated['clip_end_ms'],
-                    'range_label' => $validated['range_label'],
-                    'duration_ms' => (int) $validated['duration_ms'],
+                'data' => $this->skippedResponseData($validated, 'upload', [
                     'prepared_duration_ms' => (int) $segment['duration_ms'],
                     'prepared_file_size_bytes' => (int) $segment['size'],
-                ],
+                ]),
             ]);
         }
 
-        $contents = file_get_contents($segment['path']);
+        $storedAudio = $transcriptionAudio ?? $segment;
+        $contents = file_get_contents($storedAudio['path']);
 
         if ($contents === false) {
             return response()->json([
@@ -315,9 +334,9 @@ class AudioChunkController extends Controller
             'clip_end_ms' => (int) $validated['clip_end_ms'],
             'range_label' => $validated['range_label'],
             'duration_ms' => (int) $validated['duration_ms'],
-            'mime_type' => $segment['mime_type'],
-            'original_name' => $segment['name'],
-            'file_size_bytes' => $segment['size'],
+            'mime_type' => $storedAudio['mime_type'],
+            'original_name' => $storedAudio['name'],
+            'file_size_bytes' => $storedAudio['size'],
             'audio_blob' => $contents,
             'translated_text' => $transcription['text'],
             'transcription_timestamps' => json_encode($transcription['timestamps']),
@@ -338,8 +357,8 @@ class AudioChunkController extends Controller
                 'clip_end_ms' => (int) $validated['clip_end_ms'],
                 'range_label' => $validated['range_label'],
                 'duration_ms' => (int) $validated['duration_ms'],
-                'prepared_duration_ms' => (int) $segment['duration_ms'],
-                'prepared_file_size_bytes' => (int) $segment['size'],
+                'prepared_duration_ms' => (int) $storedAudio['duration_ms'],
+                'prepared_file_size_bytes' => (int) $storedAudio['size'],
                 'play_url' => route('audio-chunks.audio', ['audioChunk' => $audioChunkId]),
                 'delete_url' => route('audio-chunks.destroy', ['audioChunk' => $audioChunkId]),
                 'translated_text' => $transcription['text'],
@@ -379,6 +398,34 @@ class AudioChunkController extends Controller
             'message' => 'deleted',
             'id' => $audioChunk,
         ]);
+    }
+
+    private function vadContext(array $validated, int $userId, string $categoryName, string $sourceType): array
+    {
+        return [
+            'user_id' => $userId,
+            'category_name' => $categoryName,
+            'source_type' => $sourceType,
+            'clip_index' => (int) $validated['clip_index'],
+            'clip_start_ms' => (int) $validated['clip_start_ms'],
+            'clip_end_ms' => (int) $validated['clip_end_ms'],
+            'range_label' => (string) $validated['range_label'],
+            'duration_ms' => (int) $validated['duration_ms'],
+        ];
+    }
+
+    private function skippedResponseData(array $validated, string $sourceType, array $extra = []): array
+    {
+        return array_merge([
+            'skipped' => true,
+            'reason' => 'no_speech_detected',
+            'source_type' => $sourceType,
+            'clip_index' => (int) $validated['clip_index'],
+            'clip_start_ms' => (int) $validated['clip_start_ms'],
+            'clip_end_ms' => (int) $validated['clip_end_ms'],
+            'range_label' => $validated['range_label'],
+            'duration_ms' => (int) $validated['duration_ms'],
+        ], $extra);
     }
 
     private function deleteNoSpeechRows(): void

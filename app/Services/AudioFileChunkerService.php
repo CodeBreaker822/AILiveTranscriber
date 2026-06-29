@@ -329,12 +329,16 @@ class AudioFileChunkerService
 
     private function ffmpegPath(): string
     {
-        return base_path('ffmpeg/bin/ffmpeg.exe');
+        $bundled = base_path('ffmpeg/bin/ffmpeg.exe');
+
+        return PHP_OS_FAMILY === 'Windows' || is_file($bundled) ? $bundled : 'ffmpeg';
     }
 
     private function ffprobePath(): string
     {
-        return base_path('ffmpeg/bin/ffprobe.exe');
+        $bundled = base_path('ffmpeg/bin/ffprobe.exe');
+
+        return PHP_OS_FAMILY === 'Windows' || is_file($bundled) ? $bundled : 'ffprobe';
     }
 
     private function formatRange(int $startMs, int $endMs): string
