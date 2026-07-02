@@ -17,14 +17,10 @@
         "runtime:npm": "npm --version",
         "runtime:php": "node scripts/run-php.mjs --version",
         "tauri:dev": "tauri dev",
-        "release:windows": "node scripts/build-desktop.mjs windows",
-        "release:windows:empty": "node scripts/build-desktop.mjs windows empty",
         "tauri:build": "node scripts/build-desktop.mjs",
-        "tauri:build:windows": "node scripts/build-desktop.mjs windows",
-        "tauri:build:linux": "node scripts/build-desktop.mjs linux",
-        "tauri:build:empty": "node scripts/build-desktop.mjs current empty",
-        "tauri:build:empty:windows": "node scripts/build-desktop.mjs windows empty",
-        "tauri:build:empty:linux": "node scripts/build-desktop.mjs linux empty",
+        "tauri:build:empty": "node scripts/build-desktop.mjs empty",
+        "tauri:package": "node scripts/create-update-package.mjs",
+        "tauri:package:empty": "node scripts/create-update-package.mjs empty",
         "update:package": "node scripts/create-update-package.mjs"
     },
     "devDependencies": {

@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod offline_whisper;
+
 use serde::Serialize;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
@@ -22,6 +24,160 @@ const STARTUP_ATTEMPTS: usize = 80;
 const STARTUP_RETRY_DELAY: Duration = Duration::from_millis(250);
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
+const OFFLINE_WHISPER_MODEL: &str = "ggml-large-v3-turbo-q8_0.bin";
+
+#[derive(Clone, Copy)]
+struct ResourceProfile {
+    logical_processors: usize,
+    whisper_threads: usize,
+    total_memory_mb: u64,
+    available_memory_mb: u64,
+    whisper_memory_budget_mb: u64,
+}
+
+fn whisper_thread_budget(logical_processors: usize) -> usize {
+    let logical_processors = logical_processors.max(1);
+
+    if logical_processors <= 2 {
+        return 1;
+    }
+
+    let proportional_budget = (logical_processors * 3 / 5).max(1);
+    let reserved_processors = if logical_processors >= 4 { 2 } else { 1 };
+
+    proportional_budget.min(
+        logical_processors
+            .saturating_sub(reserved_processors)
+            .max(1),
+    )
+}
+
+fn resource_profile() -> ResourceProfile {
+    let logical_processors = std::thread::available_parallelism()
+        .map(|count| count.get())
+        .unwrap_or(2)
+        .max(1);
+    let whisper_threads = whisper_thread_budget(logical_processors);
+    let (total_memory_mb, available_memory_mb) = system_memory_mb().unwrap_or((0, 0));
+    let whisper_memory_budget_mb = if total_memory_mb > 0 && available_memory_mb > 0 {
+        (total_memory_mb / 2)
+            .min(available_memory_mb.saturating_mul(2) / 3)
+            .max(1)
+    } else {
+        0
+    };
+
+    ResourceProfile {
+        logical_processors,
+        whisper_threads,
+        total_memory_mb,
+        available_memory_mb,
+        whisper_memory_budget_mb,
+    }
+}
+
+#[cfg(windows)]
+fn system_memory_mb() -> Option<(u64, u64)> {
+    use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+
+    let mut status: MEMORYSTATUSEX = unsafe { std::mem::zeroed() };
+    status.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
+
+    if unsafe { GlobalMemoryStatusEx(&mut status) } == 0 {
+        return None;
+    }
+
+    Some((
+        status.ullTotalPhys / 1_048_576,
+        status.ullAvailPhys / 1_048_576,
+    ))
+}
+
+#[cfg(not(windows))]
+fn system_memory_mb() -> Option<(u64, u64)> {
+    None
+}
+
+#[cfg(windows)]
+fn lower_offline_worker_priority() {
+    use windows_sys::Win32::System::Threading::{
+        GetCurrentProcess, SetPriorityClass, BELOW_NORMAL_PRIORITY_CLASS,
+    };
+
+    unsafe {
+        SetPriorityClass(GetCurrentProcess(), BELOW_NORMAL_PRIORITY_CLASS);
+    }
+}
+
+#[cfg(not(windows))]
+fn lower_offline_worker_priority() {}
+
+fn run_offline_whisper_cli() -> bool {
+    let arguments = std::env::args().skip(1).collect::<Vec<_>>();
+
+    if !arguments
+        .iter()
+        .any(|argument| argument == "--offline-whisper")
+    {
+        return false;
+    }
+
+    lower_offline_worker_priority();
+
+    let value_after = |flag: &str| -> Option<&str> {
+        arguments
+            .iter()
+            .position(|argument| argument == flag)
+            .and_then(|index| arguments.get(index + 1))
+            .map(String::as_str)
+    };
+    let output_path = value_after("--output").map(PathBuf::from);
+    let fallback_threads = || {
+        whisper_thread_budget(
+            std::thread::available_parallelism()
+                .map(|count| count.get())
+                .unwrap_or(2),
+        )
+    };
+    let thread_budget = value_after("--threads")
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or_else(fallback_threads);
+    let result = match (value_after("--model"), value_after("--audio")) {
+        (Some(model), Some(audio)) => offline_whisper::transcribe(
+            std::path::Path::new(model),
+            std::path::Path::new(audio),
+            value_after("--language"),
+            thread_budget,
+        ),
+        _ => Err("offline Whisper requires --model and --audio paths".to_string()),
+    };
+    let (payload, exit_code) = match result {
+        Ok(transcription) => (
+            serde_json::to_vec(&transcription)
+                .unwrap_or_else(|_| br#"{"error":"failed to encode transcription"}"#.to_vec()),
+            0,
+        ),
+        Err(error) => (
+            serde_json::to_vec(&serde_json::json!({ "error": error }))
+                .unwrap_or_else(|_| br#"{"error":"offline transcription failed"}"#.to_vec()),
+            1,
+        ),
+    };
+
+    if let Some(output_path) = output_path {
+        if std::fs::write(output_path, payload).is_err() {
+            std::process::exit(1);
+        }
+    } else {
+        let _ = std::io::stdout().write_all(&payload);
+    }
+
+    if exit_code != 0 {
+        std::process::exit(exit_code);
+    }
+
+    true
+}
 
 struct LaravelServer(Mutex<Option<Child>>);
 
@@ -30,6 +186,7 @@ struct LaravelPaths {
     database_path: PathBuf,
     storage_path: PathBuf,
     startup_log_path: PathBuf,
+    resources: ResourceProfile,
 }
 
 #[derive(Serialize)]
@@ -90,6 +247,7 @@ fn laravel_paths(app: &tauri::AppHandle) -> Result<LaravelPaths, String> {
         database_path,
         storage_path,
         startup_log_path,
+        resources: resource_profile(),
     })
 }
 
@@ -142,10 +300,15 @@ fn reset_startup_log(paths: &LaravelPaths) -> Result<File, String> {
 
     writeln!(
         file,
-        "AITranscriber startup log\nProject: {}\nDatabase: {}\nStorage: {}\n",
+        "AITranscriber startup log\nProject: {}\nDatabase: {}\nStorage: {}\nCPU: {} logical processors; Whisper: {} threads\nMemory: {} MB total; {} MB available; Whisper budget: {} MB\n",
         paths.project_dir.display(),
         paths.database_path.display(),
-        paths.storage_path.display()
+        paths.storage_path.display(),
+        paths.resources.logical_processors,
+        paths.resources.whisper_threads,
+        paths.resources.total_memory_mb,
+        paths.resources.available_memory_mb,
+        paths.resources.whisper_memory_budget_mb,
     )
     .map_err(|error| format!("failed to write startup log header: {error}"))?;
 
@@ -175,13 +338,38 @@ fn laravel_command(php_path: PathBuf, artisan_path: PathBuf, paths: &LaravelPath
     let database_env = env_path(&paths.database_path);
     let storage_env = env_path(&paths.storage_path);
 
+    let executable = std::env::current_exe().ok();
+    let whisper_model_directory = paths
+        .storage_path
+        .join("app")
+        .join("private")
+        .join("whisper")
+        .join("models");
+    let whisper_model = whisper_model_directory.join(OFFLINE_WHISPER_MODEL);
     command
         .arg(artisan_path)
         .current_dir(&paths.project_dir)
         .env("DB_DATABASE", database_env)
         .env("APP_STORAGE_PATH", storage_env)
         .env("APP_ENV", "production")
-        .env("APP_DEBUG", "false");
+        .env("APP_DEBUG", "false")
+        .env(
+            "AI_TRANSCRIBER_WHISPER_THREADS",
+            paths.resources.whisper_threads.to_string(),
+        )
+        .env(
+            "AI_TRANSCRIBER_WHISPER_MEMORY_BUDGET_MB",
+            paths.resources.whisper_memory_budget_mb.to_string(),
+        )
+        .env("WHISPER_MODEL_PATH", env_path(&whisper_model))
+        .env(
+            "WHISPER_MODEL_DIRECTORY",
+            env_path(&whisper_model_directory),
+        );
+
+    if let Some(executable) = executable {
+        command.env("AI_TRANSCRIBER_EXECUTABLE", env_path(&executable));
+    }
 
     #[cfg(windows)]
     {
@@ -193,6 +381,7 @@ fn laravel_command(php_path: PathBuf, artisan_path: PathBuf, paths: &LaravelPath
             .env("PHPRC", env_path(&php_dir))
             .env("PHP_INI_SCAN_DIR", "")
             .env("CURL_CA_BUNDLE", ca_bundle_env.clone())
+            .env("AI_TRANSCRIBER_CA_BUNDLE", ca_bundle_env.clone())
             .env("SSL_CERT_FILE", ca_bundle_env);
     }
 
@@ -238,6 +427,20 @@ fn sync_bundled_default_settings(
         artisan_path,
         &["app:sync-bundled-default-settings"],
         "bundled default settings sync",
+    )
+}
+
+fn clear_compiled_views(
+    paths: &LaravelPaths,
+    php_path: PathBuf,
+    artisan_path: PathBuf,
+) -> Result<(), String> {
+    run_artisan(
+        paths,
+        php_path,
+        artisan_path,
+        &["view:clear", "--no-interaction"],
+        "compiled view cleanup",
     )
 }
 
@@ -418,6 +621,8 @@ fn start_laravel(app: &tauri::AppHandle) -> Result<(), String> {
     append_startup_log(&paths, "Database migrations completed.");
     sync_bundled_default_settings(&paths, php_path.clone(), artisan_path.clone())?;
     append_startup_log(&paths, "Bundled default settings sync completed.");
+    clear_compiled_views(&paths, php_path.clone(), artisan_path.clone())?;
+    append_startup_log(&paths, "Compiled Blade views cleared.");
 
     let mut command = laravel_command(php_path, artisan_path, &paths);
     let stderr_log = startup_log
@@ -520,6 +725,7 @@ fn stop_laravel(app: &tauri::AppHandle) {
 
     if let Some(mut child) = child_process {
         let _ = child.kill();
+        let _ = child.wait();
     }
 }
 
@@ -593,7 +799,7 @@ fn bootstrap_laravel(app: &tauri::AppHandle) -> Result<(), String> {
             &paths,
             &format!("Debug mode detected an existing dev server on port {LARAVEL_PORT}."),
         );
-        return wait_for_laravel(&paths);
+        return Ok(());
     }
 
     force_clear_laravel_port(&paths)?;
@@ -791,10 +997,7 @@ fn install_update(app: tauri::AppHandle, archive_path: String) -> Result<(), Str
     #[cfg(not(windows))]
     {
         let _ = (app, archive_path);
-        return Err(
-            "Automatic ZIP installation is available on Windows only. Replace the Linux AppImage to update."
-                .to_string(),
-        );
+        return Err("Automatic ZIP installation is available on Windows only.".to_string());
     }
 
     #[cfg(windows)]
@@ -818,22 +1021,55 @@ fn install_update(app: tauri::AppHandle, archive_path: String) -> Result<(), Str
 
         let install_directory = std::fs::canonicalize(&paths.project_dir)
             .map_err(|error| format!("failed to locate application directory: {error}"))?;
+        let permission_probe = install_directory.join(format!(
+            ".aitranscriber-update-write-test-{}.tmp",
+            std::process::id()
+        ));
+
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&permission_probe)
+            .map_err(|error| {
+                format!(
+                    "AITranscriber cannot update files in {}. Reinstall it for the current user or grant this account write access: {error}",
+                    install_directory.display()
+                )
+            })?;
+        std::fs::remove_file(&permission_probe).map_err(|error| {
+            format!(
+                "failed to remove the update permission check in {}: {error}",
+                install_directory.display()
+            )
+        })?;
         let executable = std::env::current_exe()
             .map_err(|error| format!("failed to locate AITranscriber executable: {error}"))?;
         let updater_script = update_directory.join("install-update.ps1");
+        let updater_log = update_directory.join("install-update.log");
         let script = r#"param(
     [Parameter(Mandatory=$true)][string]$Archive,
     [Parameter(Mandatory=$true)][string]$InstallDirectory,
     [Parameter(Mandatory=$true)][string]$Executable,
-    [Parameter(Mandatory=$true)][int]$ParentProcessId
+    [Parameter(Mandatory=$true)][int]$ParentProcessId,
+    [Parameter(Mandatory=$true)][string]$LogPath
 )
 $ErrorActionPreference = 'Stop'
-Wait-Process -Id $ParentProcessId -ErrorAction SilentlyContinue
-Start-Sleep -Milliseconds 750
-Expand-Archive -LiteralPath $Archive -DestinationPath $InstallDirectory -Force
-Remove-Item -LiteralPath $Archive -Force -ErrorAction SilentlyContinue
-Start-Process -FilePath $Executable -WorkingDirectory $InstallDirectory
-Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
+try {
+    Wait-Process -Id $ParentProcessId -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 750
+    Expand-Archive -LiteralPath $Archive -DestinationPath $InstallDirectory -Force
+    Remove-Item -LiteralPath $Archive -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $LogPath -Force -ErrorAction SilentlyContinue
+    Start-Process -FilePath $Executable -WorkingDirectory $InstallDirectory
+} catch {
+    "$(Get-Date -Format o) Update installation failed: $($_.Exception.Message)" | Out-File -LiteralPath $LogPath -Encoding utf8 -Append
+    if (Test-Path -LiteralPath $Executable) {
+        Start-Process -FilePath $Executable -WorkingDirectory $InstallDirectory
+    }
+    exit 1
+} finally {
+    Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
+}
 "#;
 
         std::fs::write(&updater_script, script)
@@ -854,6 +1090,7 @@ Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
         command
             .arg("-ParentProcessId")
             .arg(std::process::id().to_string());
+        command.arg("-LogPath").arg(&updater_log);
         command.creation_flags(CREATE_NO_WINDOW);
         command
             .spawn()
@@ -867,6 +1104,10 @@ Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
 }
 
 fn main() {
+    if run_offline_whisper_cli() {
+        return;
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(LaravelServer(Mutex::new(None)))

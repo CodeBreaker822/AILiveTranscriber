@@ -1,0 +1,8 @@
+[env]
+# whisper-rs-sys includes pregenerated bindings. This keeps Windows builds
+# independent of LLVM/libclang while still compiling whisper.cpp locally.
+WHISPER_DONT_GENERATE_BINDINGS = "1"
+
+# Standard Kitware CMake installation used to compile whisper.cpp. An explicit
+# process-level CMAKE value still takes precedence for custom toolchains.
+CMAKE = { value = "C:\\Program Files\\CMake\\bin\\cmake.exe", force = false }

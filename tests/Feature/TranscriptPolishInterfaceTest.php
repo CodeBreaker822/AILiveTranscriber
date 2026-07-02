@@ -20,6 +20,10 @@ class TranscriptPolishInterfaceTest extends TestCase
                 ->assertSee('data-app-sidebar="pending"', false)
                 ->assertSee('js/modals/sidebar.js')
                 ->assertSee('js/modals/polish-instructions.js')
+                ->assertSee('js/modals/transcript-summary.js')
+                ->assertSee('data-summary-dialog', false)
+                ->assertSee('Raw transcript')
+                ->assertSee('Cleaned transcript')
                 ->assertSee('Select a preset or enter custom instructions on how to polish the transcript:')
                 ->assertSee('Translate (EN)')
                 ->assertSee('Fix Grammar')
@@ -50,6 +54,7 @@ class TranscriptPolishInterfaceTest extends TestCase
                 $this->assertSame(1, substr_count($html, 'data-stored-list'));
                 $this->assertSame(1, substr_count($html, 'data-audio-queue'));
                 $this->assertSame(1, substr_count($html, 'data-furnish-live'));
+                $this->assertSame(1, substr_count($html, 'data-summarize="live"'));
                 $this->assertSame(1, substr_count($html, 'data-live-cleaner-state'));
                 $this->assertSame(1, substr_count($html, 'data-live-cleaner-progress-bar'));
                 $this->assertSame(0, substr_count($html, 'data-upload-transcript-list'));
@@ -64,6 +69,7 @@ class TranscriptPolishInterfaceTest extends TestCase
             $this->assertSame(1, substr_count($html, 'data-upload-transcript-list'));
             $this->assertSame(1, substr_count($html, 'data-upload-queue-list'));
             $this->assertSame(1, substr_count($html, 'data-furnish-upload'));
+            $this->assertSame(1, substr_count($html, 'data-summarize="upload"'));
             $this->assertSame(1, substr_count($html, 'data-upload-duration'));
             $this->assertSame(0, substr_count($html, 'data-upload-sections'));
             $this->assertSame(1, substr_count($html, 'data-upload-status'));

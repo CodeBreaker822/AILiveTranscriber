@@ -11,7 +11,7 @@ class ServiceUserMessage
 
     public static function cannotReachProvider(string $provider): string
     {
-        return "AITranscriber could not reach {$provider}. Check your internet connection, then try again.";
+        return "AITranscriber could not contact {$provider}. Please try again shortly.";
     }
 
     public static function providerRejectedKey(string $provider): string

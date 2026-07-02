@@ -24,6 +24,9 @@
                 <button type="button" data-furnish-live class="inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-emerald-300/20 bg-emerald-300/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-100 transition hover:border-emerald-300/30 hover:bg-emerald-300/15">
                     Polish
                 </button>
+                <button type="button" data-summarize="live" class="inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-violet-300/20 bg-violet-300/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-violet-100 transition hover:border-violet-300/30 hover:bg-violet-300/15">
+                    Summarize
+                </button>
                 <select data-export-live-mode class="min-h-9 rounded-lg border border-white/10 bg-slate-950/80 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-white outline-none transition focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-300/20">
                     <option value="raw">Raw</option>
                     <option value="clean">Cleaned</option>
@@ -50,6 +53,9 @@
             @else
                 <button type="button" data-furnish-upload class="inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-emerald-300/20 bg-emerald-300/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-100 transition hover:border-emerald-300/30 hover:bg-emerald-300/15">
                     Polish
+                </button>
+                <button type="button" data-summarize="upload" class="inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-violet-300/20 bg-violet-300/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-violet-100 transition hover:border-violet-300/30 hover:bg-violet-300/15">
+                    Summarize
                 </button>
                 <select data-export-upload-mode class="min-h-9 rounded-lg border border-white/10 bg-slate-950/80 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-white outline-none transition focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-300/20">
                     <option value="raw">Raw</option>

@@ -15,6 +15,7 @@ class HostedTranscriptionApiService
 {
     public function __construct(
         private readonly AppSettingsService $settings,
+        private readonly TrustedHttpClient $http,
     ) {
     }
 
@@ -23,10 +24,20 @@ class HostedTranscriptionApiService
         try {
             $response = $this->request($licenseKey)->get($this->url('/license/status'));
         } catch (ConnectionException $exception) {
+            $this->http->logConnectionFailure(
+                'Hosted license status connection failed.',
+                $this->url('/license/status'),
+                $exception,
+            );
             throw new SpeechToTextException(ServiceUserMessage::cannotReachProvider('transcription server'), 0, $exception);
         }
 
         if ($response->failed()) {
+            $this->http->logHttpFailure(
+                'Hosted license status request failed.',
+                $this->url('/license/status'),
+                $response,
+            );
             throw new SpeechToTextException($this->messageForResponse($response, 'License status could not be checked.'));
         }
 
@@ -41,6 +52,7 @@ class HostedTranscriptionApiService
             Http::acceptJson()
                 ->connectTimeout(3)
                 ->timeout(5)
+                ->withOptions($this->http->options())
                 ->get($this->settings->apiBaseUrl());
 
             // Any HTTP response means the hosted server is reachable. This quiet
@@ -59,6 +71,11 @@ class HostedTranscriptionApiService
                 ->withOptions(['stream' => true])
                 ->get($this->url('/transcribe/update/zipfile'));
         } catch (ConnectionException $exception) {
+            $this->http->logConnectionFailure(
+                'Hosted update download connection failed.',
+                $this->url('/transcribe/update/zipfile'),
+                $exception,
+            );
             throw new SpeechToTextException(ServiceUserMessage::cannotReachProvider('update server'), 0, $exception);
         }
     }
@@ -94,6 +111,17 @@ class HostedTranscriptionApiService
                     'clip_end_ms' => $options['clip_end_ms'] ?? null,
                 ]);
         } catch (ConnectionException $exception) {
+            $this->http->logConnectionFailure(
+                'Hosted transcription connection failed.',
+                $this->url('/transcribe'),
+                $exception,
+                [
+                    'provider' => $selection['provider'],
+                    'model' => $selection['model'],
+                    'language_code' => $selection['language'],
+                    'file_name' => $file['name'],
+                ],
+            );
             throw new SpeechToTextException(ServiceUserMessage::cannotReachProvider('transcription server'), 0, $exception);
         }
 
@@ -107,7 +135,7 @@ class HostedTranscriptionApiService
                 'response' => $response->json() ?? $response->body(),
             ]);
 
-            throw new SpeechToTextException($this->messageForResponse($response, ServiceUserMessage::transcriptionFailed('Transcription server')), $response->status());
+            throw new SpeechToTextException(ServiceUserMessage::transcriptionFailed('Transcription server'), $response->status());
         }
 
         $payload = $response->json() ?? [];
@@ -137,14 +165,23 @@ class HostedTranscriptionApiService
             ];
         }
 
-        $response = $this->postJson('/polish', [
+        $rawResponse = $this->postJson('/polish', [
             'text' => $text,
             'timestamps' => $timestamps,
             'instruction' => trim((string) ($options['instructions'] ?? '')),
         ]);
+        $response = $this->responseData($rawResponse);
+        $polishedText = (string) ($response['text'] ?? '');
+
+        if (trim($polishedText) === '') {
+            throw new TranscriptPolisherException(
+                $this->messageFromPayload($rawResponse)
+                    ?? 'The transcription server returned a successful response without polished text.'
+            );
+        }
 
         return [
-            'text' => (string) ($response['text'] ?? ''),
+            'text' => $polishedText,
             'timestamps' => is_array($response['timestamps'] ?? null) ? array_values(array_filter($response['timestamps'], 'is_array')) : [],
             'provider' => $this->nullableString($response['provider'] ?? $polisher['provider']),
             'model' => $this->nullableString($response['model'] ?? $polisher['model']),
@@ -184,10 +221,27 @@ class HostedTranscriptionApiService
             ];
         }
 
-        $response = $this->postJson('/polish', [
+        $rawResponse = $this->postJson('/polish', [
             'chunks' => $payloadChunks,
             'instruction' => trim((string) ($options['instructions'] ?? '')),
         ]);
+        $response = $this->responseData($rawResponse);
+        $responseChunks = array_values(array_filter($response['chunks'] ?? [], 'is_array'));
+        $expectedIds = collect($payloadChunks)
+            ->filter(fn (array $chunk): bool => $chunk['text'] !== '')
+            ->map(fn (array $chunk): int => (int) $chunk['audio_chunk_id'])
+            ->values();
+        $validChunks = collect($responseChunks)
+            ->filter(fn (array $chunk): bool => (int) ($chunk['audio_chunk_id'] ?? 0) > 0
+                && trim((string) ($chunk['text'] ?? '')) !== '')
+            ->keyBy(fn (array $chunk): int => (int) $chunk['audio_chunk_id']);
+
+        if ($expectedIds->contains(fn (int $id): bool => ! $validChunks->has($id))) {
+            throw new TranscriptPolisherException(
+                $this->messageFromPayload($rawResponse)
+                    ?? 'The transcription server returned an incomplete or empty polished transcript.'
+            );
+        }
 
         return [
             'chunks' => array_values(array_map(
@@ -196,7 +250,7 @@ class HostedTranscriptionApiService
                     'text' => (string) ($chunk['text'] ?? ''),
                     'timestamps' => is_array($chunk['timestamps'] ?? null) ? array_values(array_filter($chunk['timestamps'], 'is_array')) : [],
                 ],
-                array_filter($response['chunks'] ?? [], 'is_array'),
+                $responseChunks,
             )),
             'provider' => $this->nullableString($response['provider'] ?? $polisher['provider']),
             'model' => $this->nullableString($response['model'] ?? $polisher['model']),
@@ -212,16 +266,74 @@ class HostedTranscriptionApiService
         } catch (SpeechToTextException $exception) {
             throw new TranscriptPolisherException($exception->getMessage(), 0, $exception);
         } catch (ConnectionException $exception) {
+            $this->http->logConnectionFailure(
+                'Hosted transcript polishing connection failed.',
+                $this->url($path),
+                $exception,
+            );
             throw new TranscriptPolisherException(ServiceUserMessage::cannotReachProvider('transcription server'), 0, $exception);
         }
 
         if ($response->failed()) {
+            $this->http->logHttpFailure(
+                'Hosted transcript polishing request failed.',
+                $this->url($path),
+                $response,
+            );
             throw new TranscriptPolisherException($this->messageForResponse($response, ServiceUserMessage::cleanerFailed()), $response->status());
         }
 
         $decoded = $response->json();
 
-        return is_array($decoded) ? $decoded : [];
+        if (! is_array($decoded)) {
+            throw new TranscriptPolisherException('The transcription server returned invalid JSON.');
+        }
+
+        $failed = ($decoded['success'] ?? null) === false
+            || ($decoded['ok'] ?? null) === false
+            || in_array(strtolower((string) ($decoded['status'] ?? '')), ['error', 'failed'], true);
+
+        if ($failed) {
+            throw new TranscriptPolisherException(
+                $this->messageFromPayload($decoded) ?? ServiceUserMessage::cleanerFailed()
+            );
+        }
+
+        return $decoded;
+    }
+
+    private function responseData(array $response): array
+    {
+        return is_array($response['data'] ?? null) ? $response['data'] : $response;
+    }
+
+    private function messageFromPayload(array $payload): ?string
+    {
+        foreach (['message', 'error', 'detail'] as $key) {
+            $value = $payload[$key] ?? null;
+
+            if (is_string($value) && trim($value) !== '') {
+                return trim($value);
+            }
+        }
+
+        if (is_array($payload['data'] ?? null)) {
+            return $this->messageFromPayload($payload['data']);
+        }
+
+        $errors = $payload['errors'] ?? null;
+
+        if (is_array($errors)) {
+            foreach ($errors as $error) {
+                $value = is_array($error) ? reset($error) : $error;
+
+                if (is_string($value) && trim($value) !== '') {
+                    return trim($value);
+                }
+            }
+        }
+
+        return null;
     }
 
     private function request(?string $licenseKey = null)
@@ -234,6 +346,7 @@ class HostedTranscriptionApiService
 
         return Http::withToken($licenseKey)
             ->acceptJson()
+            ->withOptions($this->http->options())
             ->timeout((int) config('services.transcription_api.timeout', 120));
     }
 
@@ -244,9 +357,9 @@ class HostedTranscriptionApiService
 
     private function messageForResponse(Response $response, string $fallback): string
     {
-        $message = $response->json('message');
+        $payload = $response->json();
 
-        if (is_string($message) && trim($message) !== '') {
+        if (is_array($payload) && ($message = $this->messageFromPayload($payload)) !== null) {
             return $message;
         }
 

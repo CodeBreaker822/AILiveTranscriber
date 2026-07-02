@@ -3,6 +3,10 @@
 
 SETLOCAL
 
+:: Make the bundled Node runtime available to npm lifecycle scripts.
+SET "PATH=%~dp0;%PATH%"
+IF EXIST "%USERPROFILE%\.cargo\bin" SET "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
+
 SET "NODE_EXE=%~dp0\node.exe"
 IF NOT EXIST "%NODE_EXE%" (
   SET "NODE_EXE=node"

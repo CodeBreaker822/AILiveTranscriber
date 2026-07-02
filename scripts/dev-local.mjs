@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import os from 'node:os';
 import path from 'node:path';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -8,7 +9,39 @@ const bundledWindowsPhp = path.join(projectRoot, 'php', 'php.exe');
 const php = process.platform === 'win32' && existsSync(bundledWindowsPhp)
     ? bundledWindowsPhp
     : 'php';
+const caBundle = path.join(projectRoot, 'php', 'extras', 'ssl', 'cacert.pem');
+const logicalProcessors = Math.max(1, os.availableParallelism?.() ?? os.cpus().length);
+const whisperThreads = logicalProcessors <= 2
+    ? 1
+    : Math.min(Math.max(1, Math.floor(logicalProcessors * 0.6)), logicalProcessors - 2);
+const totalMemoryMb = Math.floor(os.totalmem() / 1024 / 1024);
+const availableMemoryMb = Math.floor(os.freemem() / 1024 / 1024);
+const whisperMemoryBudgetMb = Math.max(1, Math.min(
+    Math.floor(totalMemoryMb / 2),
+    Math.floor((availableMemoryMb * 2) / 3),
+));
+const runtimeEnvironment = {
+    ...process.env,
+    CURL_CA_BUNDLE: caBundle,
+    SSL_CERT_FILE: caBundle,
+    AI_TRANSCRIBER_CA_BUNDLE: caBundle,
+    AI_TRANSCRIBER_WHISPER_THREADS: String(whisperThreads),
+    AI_TRANSCRIBER_WHISPER_MEMORY_BUDGET_MB: String(whisperMemoryBudgetMb),
+    AI_TRANSCRIBER_DESKTOP_DEV: 'true',
+};
 const vite = path.join(projectRoot, 'node_modules', 'vite', 'bin', 'vite.js');
+const publicDirectory = path.join(projectRoot, 'public');
+const laravelServerRouter = path.join(
+    projectRoot,
+    'vendor',
+    'laravel',
+    'framework',
+    'src',
+    'Illuminate',
+    'Foundation',
+    'resources',
+    'server.php',
+);
 const children = new Set();
 let stopping = false;
 
@@ -18,6 +51,7 @@ function runOnce(args) {
             cwd: projectRoot,
             stdio: 'inherit',
             windowsHide: true,
+            env: runtimeEnvironment,
         });
 
         child.on('error', reject);
@@ -32,11 +66,12 @@ function runOnce(args) {
     });
 }
 
-function start(name, command, args) {
+function start(name, command, args, options = {}) {
     const child = spawn(command, args, {
-        cwd: projectRoot,
+        cwd: options.cwd ?? projectRoot,
         stdio: 'inherit',
         windowsHide: true,
+        env: runtimeEnvironment,
     });
 
     children.add(child);
@@ -48,6 +83,33 @@ function start(name, command, args) {
             stop(`${name} stopped with code ${code ?? signal}.`);
         }
     });
+}
+
+async function waitForVite() {
+    const url = 'http://127.0.0.1:5173/@vite/client';
+    const deadline = Date.now() + 60_000;
+    let lastError = 'Vite did not respond.';
+
+    while (Date.now() < deadline && !stopping) {
+        try {
+            const response = await fetch(url, {
+                cache: 'no-store',
+                signal: AbortSignal.timeout(2_000),
+            });
+
+            if (response.ok) {
+                return;
+            }
+
+            lastError = `Vite returned HTTP ${response.status}.`;
+        } catch (error) {
+            lastError = error?.message || String(error);
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+
+    throw new Error(`Vite was not ready on ${url}: ${lastError}`);
 }
 
 function stop(message) {
@@ -74,15 +136,25 @@ process.on('SIGTERM', () => stop());
 try {
     await runOnce(['scripts/clear-dev-port.php', '8010']);
     await runOnce(['scripts/clear-dev-port.php', '5173']);
+    await runOnce(['artisan', 'view:clear', '--no-ansi']);
+    await runOnce(['artisan', 'config:clear', '--no-ansi']);
+
+    start('Vite server', process.execPath, [vite]);
+    await waitForVite();
 
     start('Laravel server', php, [
+        '-S',
+        '127.0.0.1:8010',
+        '-t',
+        publicDirectory,
+        laravelServerRouter,
+    ], { cwd: publicDirectory });
+    start('Queue worker', php, [
         'artisan',
-        'serve',
-        '--host=127.0.0.1',
-        '--port=8010',
+        'queue:work',
+        '--tries=1',
+        '--sleep=1',
     ]);
-    start('Queue worker', php, ['artisan', 'queue:listen', '--tries=1']);
-    start('Vite server', process.execPath, [vite]);
 } catch (error) {
     stop(`Local development startup failed: ${error.message}`);
 }

@@ -152,7 +152,6 @@ class TranscriptFurnishController extends Controller
             sleep(self::POLISH_REQUEST_INTERVAL_SECONDS);
         }
 
-        $this->removeExistingCleanedChunks($windowChunks);
         $chunksToClean = $windowChunks;
         $result = [
             'chunks' => [],
@@ -173,6 +172,10 @@ class TranscriptFurnishController extends Controller
         $newCleanedById = collect($result['chunks'])->keyBy('audio_chunk_id');
 
         $cleaned = [];
+
+        // Keep the last known-good polished transcript until the hosted response
+        // has been fully validated. A failed retry must not destroy good output.
+        $this->removeExistingCleanedChunks($windowChunks);
 
         foreach ($windowChunks as $chunk) {
             $cleanedChunk = $newCleanedById->get((int) $chunk->id);
@@ -248,9 +251,11 @@ class TranscriptFurnishController extends Controller
             'category_name' => $categoryName,
         ]);
 
+        $status = (int) $exception->getCode();
+
         return response()->json([
             'message' => $exception->getMessage(),
-        ], 422);
+        ], $status >= 400 && $status <= 599 ? $status : 422);
     }
 
     private function toPolishChunks(array $chunks): array

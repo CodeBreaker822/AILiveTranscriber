@@ -79,6 +79,30 @@
                 @endforeach
             </nav>
 
+            <button
+                type="button"
+                data-offline-model-download
+                title="Download Whisper large-v3-turbo Q8 for offline transcription"
+                class="inline-flex h-11 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-lg border border-emerald-300/20 bg-emerald-300/10 px-3 text-sm font-medium text-emerald-100 transition hover:border-emerald-300/35 hover:bg-emerald-300/15 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+                <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M12 3v12" />
+                    <path d="m7 10 5 5 5-5" />
+                    <path d="M5 21h14" />
+                </svg>
+                <span data-offline-model-label>Download Offline</span>
+            </button>
+
+            <div data-transcription-engine-switch class="hidden h-11 shrink-0 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3" title="Choose online or offline transcription">
+                <span class="text-xs font-semibold text-cyan-200">Online</span>
+                <label class="relative inline-flex cursor-pointer items-center">
+                    <input type="checkbox" class="peer sr-only" data-transcription-engine-toggle aria-label="Use offline transcription">
+                    <span class="h-6 w-11 rounded-full bg-slate-700 transition peer-checked:bg-emerald-400/80 peer-focus-visible:ring-2 peer-focus-visible:ring-cyan-300/60"></span>
+                    <span class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5"></span>
+                </label>
+                <span class="text-xs font-semibold text-emerald-200">Offline</span>
+            </div>
+
             <a
                 href="{{ route('settings.edit') }}"
                 aria-label="Settings"
@@ -96,4 +120,6 @@
 </header>
 
 @include('modals.app-update')
+@include('modals.offline-model')
 <script src="{{ asset('js/modals/app-update.js') }}" defer></script>
+<script src="{{ asset('js/offline-model.js') }}" defer></script>

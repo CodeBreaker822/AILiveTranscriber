@@ -39,7 +39,12 @@ class AppUpdateControllerTest extends TestCase
 
         $this->getJson('/app-update/connectivity')
             ->assertOk()
-            ->assertExactJson(['online' => false])
+            ->assertJsonPath('online', false)
+            ->assertJsonStructure([
+                'online',
+                'offline_available',
+                'offline_model_available',
+            ])
             ->assertDontSee('internet', false)
             ->assertDontSee('connection', false);
     }

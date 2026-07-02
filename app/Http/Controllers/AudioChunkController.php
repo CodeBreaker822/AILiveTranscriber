@@ -91,6 +91,8 @@ class AudioChunkController extends Controller
             'range_label' => ['required', 'string', 'max:32'],
             'duration_ms' => ['required', 'integer', 'min:1'],
             'language_code' => ['nullable', 'string', 'max:32'],
+            'transcription_engine' => ['nullable', 'string', 'in:online,offline'],
+            'whisper_model' => ['nullable', 'string', 'in:tiny,small,medium,large,turbo'],
         ]);
 
         $userId = (int) ($validated['user_id'] ?? 1);
@@ -121,6 +123,8 @@ class AudioChunkController extends Controller
                 'clip_index' => (int) $validated['clip_index'],
                 'clip_start_ms' => (int) $validated['clip_start_ms'],
                 'clip_end_ms' => (int) $validated['clip_end_ms'],
+                ...(isset($validated['transcription_engine']) ? ['engine' => $validated['transcription_engine']] : []),
+                ...(isset($validated['whisper_model']) ? ['model' => $validated['whisper_model']] : []),
             ]);
         } catch (SpeechToTextException $exception) {
             if (is_array($preparedClip) && isset($preparedClip['directory'])) {
@@ -239,6 +243,8 @@ class AudioChunkController extends Controller
             'range_label' => ['required', 'string', 'max:32'],
             'duration_ms' => ['required', 'integer', 'min:1'],
             'language_code' => ['nullable', 'string', 'max:32'],
+            'transcription_engine' => ['nullable', 'string', 'in:online,offline'],
+            'whisper_model' => ['nullable', 'string', 'in:tiny,small,medium,large,turbo'],
         ]);
 
         try {
@@ -269,6 +275,8 @@ class AudioChunkController extends Controller
                 'clip_index' => (int) $validated['clip_index'],
                 'clip_start_ms' => (int) $validated['clip_start_ms'],
                 'clip_end_ms' => (int) $validated['clip_end_ms'],
+                ...(isset($validated['transcription_engine']) ? ['engine' => $validated['transcription_engine']] : []),
+                ...(isset($validated['whisper_model']) ? ['model' => $validated['whisper_model']] : []),
             ]);
         } catch (SpeechToTextException $exception) {
             Log::error('Uploaded audio section transcription failed.', [

@@ -32,6 +32,10 @@ class TranscriptMemoryService
         $before = $this->snapshot();
 
         DB::transaction(function (): void {
+            if (Schema::hasTable('transcript_summaries')) {
+                DB::table('transcript_summaries')->delete();
+            }
+
             if (Schema::hasTable('clean_transcript_chunks')) {
                 DB::table('clean_transcript_chunks')->delete();
             }

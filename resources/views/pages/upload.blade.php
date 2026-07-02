@@ -1,5 +1,6 @@
 @php
     $languageOptions = app(\App\Services\AppSettingsService::class)->speechToTextLanguageOptions();
+    $whisperModels = app(\App\Services\OfflineWhisperModelService::class)->catalog();
 @endphp
 
 <x-app-layout title="Upload Audio | AI Transcriber" active-page="upload">
@@ -19,6 +20,9 @@
                 <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-white/10 px-3 py-2">
                     <button type="button" data-furnish-upload class="inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-emerald-300/20 bg-emerald-300/10 px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-emerald-100 transition hover:border-emerald-300/30 hover:bg-emerald-300/15">
                         Polish
+                    </button>
+                    <button type="button" data-summarize="upload" class="inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-violet-300/20 bg-violet-300/10 px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-violet-100 transition hover:border-violet-300/30 hover:bg-violet-300/15">
+                        Summarize
                     </button>
                     <select data-export-upload-mode class="min-h-8 rounded-lg border border-white/10 bg-slate-950/80 px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-white outline-none transition focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-300/20">
                         <option value="raw">Raw</option>
@@ -57,7 +61,7 @@
                     <h1 class="text-xl font-semibold tracking-tight text-white">Audio to Text Converter</h1>
 
                     <form data-upload-form class="mt-2 space-y-2" action="#" method="post" enctype="multipart/form-data">
-                        <div class="grid grid-cols-3 gap-2">
+                        <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
                             <div class="relative z-50">
                                 <label class="block">
                                     <span class="text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-slate-400">Project Name</span>
@@ -66,11 +70,20 @@
                                 <div data-upload-category-suggestions class="absolute left-0 right-0 top-full z-50 mt-2 hidden max-h-48 overflow-y-auto rounded-lg border border-cyan-300/20 bg-slate-950 p-2 shadow-[0_20px_60px_rgba(0,0,0,0.55)]"></div>
                             </div>
 
-                            <label class="block">
+                            <label class="block" data-language-control>
                                 <span class="text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-slate-400">Language</span>
                                 <select name="language_code" class="mt-1 w-full rounded-lg border border-white/10 bg-slate-950/80 px-2.5 py-1.5 text-[0.72rem] text-white outline-none transition focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-300/20" data-upload-language>
                                     @foreach ($languageOptions as $option)
                                         <option value="{{ $option['value'] }}" @selected($loop->first)>{{ $option['label'] }}</option>
+                                    @endforeach
+                                </select>
+                            </label>
+
+                            <label class="hidden" data-whisper-model-control>
+                                <span class="text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-slate-400">Whisper model</span>
+                                <select name="whisper_model" class="mt-1 w-full rounded-lg border border-white/10 bg-slate-950/80 px-2.5 py-1.5 text-[0.72rem] text-white outline-none transition focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-300/20" data-whisper-model>
+                                    @foreach ($whisperModels as $model)
+                                        <option value="{{ $model['id'] }}" @selected($model['id'] === 'turbo')>{{ $model['label'] }} · {{ $model['size'] }}</option>
                                     @endforeach
                                 </select>
                             </label>
@@ -83,6 +96,7 @@
                                     <option value="300">5 minutes</option>
                                 </select>
                             </label>
+
                         </div>
 
                         <div class="flex items-center gap-2 rounded-lg border border-dashed border-cyan-300/25 bg-cyan-300/5 p-2">
@@ -115,7 +129,7 @@
                         <div class="flex min-w-0 items-center gap-2 text-[0.72rem]">
                             <p class="shrink-0 uppercase tracking-[0.18em] text-slate-400">Now</p>
                             <p data-upload-status class="shrink-0 font-semibold text-white">Ready</p>
-                            <p data-upload-progress-label class="shrink-0 uppercase tracking-[0.16em] text-cyan-300">0 / 0 sections</p>
+                            <p data-upload-progress-label class="shrink-0 text-cyan-300">Process 0 out of 0</p>
                             <p data-upload-progress-percent class="shrink-0 font-semibold text-white">0%</p>
                         </div>
                         <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-800/80">

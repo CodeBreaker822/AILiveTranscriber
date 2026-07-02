@@ -2,9 +2,10 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "bundle": {
     "targets": ["nsis"],
-    "resources": {
-      "../php": "php",
-      "../ffmpeg": "ffmpeg"
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
     }
   }
 }

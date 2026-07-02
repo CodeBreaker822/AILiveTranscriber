@@ -1,5 +1,6 @@
 @php
     $languageOptions = app(\App\Services\AppSettingsService::class)->speechToTextLanguageOptions();
+    $whisperModels = app(\App\Services\OfflineWhisperModelService::class)->catalog();
 @endphp
 
 <x-app-layout title="Live Transcription | AI Transcriber" active-page="live">
@@ -19,6 +20,9 @@
                 <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-white/10 px-3 py-2">
                     <button type="button" data-furnish-live class="inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-emerald-300/20 bg-emerald-300/10 px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-emerald-100 transition hover:border-emerald-300/30 hover:bg-emerald-300/15">
                         Polish
+                    </button>
+                    <button type="button" data-summarize="live" class="inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-violet-300/20 bg-violet-300/10 px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-violet-100 transition hover:border-violet-300/30 hover:bg-violet-300/15">
+                        Summarize
                     </button>
                     <select data-export-live-mode class="min-h-8 rounded-lg border border-white/10 bg-slate-950/80 px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-white outline-none transition focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-300/20">
                         <option value="raw">Raw</option>
@@ -54,7 +58,7 @@
 
             <aside class="grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] gap-2 overflow-visible">
                 <section class="relative z-50 flex min-h-0 flex-col overflow-visible rounded-lg border border-white/10 bg-slate-950/70 p-2.5 shadow-[0_18px_60px_rgba(0,0,0,0.32)] backdrop-blur-xl">
-                    <div class="grid grid-cols-[minmax(0,1fr)_9rem] gap-2">
+                    <div class="grid grid-cols-[minmax(0,1fr)_11rem] gap-2">
                         <div class="relative z-50">
                             <p class="mb-1 text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-slate-400">Project Name</p>
                             <input
@@ -70,11 +74,20 @@
                             ></div>
                         </div>
 
-                        <label class="block">
+                        <label class="block" data-language-control>
                             <span class="mb-1 block text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-slate-400">Language</span>
                             <select data-language-input class="w-full rounded-lg border border-white/10 bg-slate-950/80 px-2.5 py-1.5 text-[0.72rem] text-white outline-none transition focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-300/20">
                                 @foreach ($languageOptions as $option)
                                     <option value="{{ $option['value'] }}" @selected($loop->first)>{{ $option['label'] }}</option>
+                                @endforeach
+                            </select>
+                        </label>
+
+                        <label class="hidden" data-whisper-model-control>
+                            <span class="mb-1 block text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-slate-400">Whisper model</span>
+                            <select class="w-full rounded-lg border border-white/10 bg-slate-950/80 px-2.5 py-1.5 text-[0.72rem] text-white outline-none transition focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-300/20" data-whisper-model>
+                                @foreach ($whisperModels as $model)
+                                    <option value="{{ $model['id'] }}" @selected($model['id'] === 'turbo')>{{ $model['label'] }} · {{ $model['size'] }}</option>
                                 @endforeach
                             </select>
                         </label>

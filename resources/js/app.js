@@ -49,6 +49,114 @@ $(function () {
         ? window.requestPolishInstructions()
         : Promise.resolve(null);
 
+    const $transcriptionEngine = $('[data-transcription-engine-toggle]');
+    const $transcriptionEngineSwitch = $('[data-transcription-engine-switch]');
+    const $languageControls = $('[data-language-control]');
+    const $whisperModelControls = $('[data-whisper-model-control]');
+    const $whisperModel = $('[data-whisper-model]');
+    const transcriptionEngineStorageKey = 'ai-transcriber-transcription-engine';
+    const whisperModelStorageKey = 'ai-transcriber-whisper-model';
+    const connectivityUrl = String($body.attr('data-update-connectivity-url') || '');
+    let engineConnectivityRequest = null;
+    let installedWhisperModels = new Set();
+
+    const getTranscriptionEngine = () => $transcriptionEngine.prop('checked') ? 'offline' : 'online';
+    const getWhisperModel = () => String($whisperModel.val() || 'turbo');
+
+    const syncTranscriptionControls = () => {
+        const offline = getTranscriptionEngine() === 'offline';
+        $languageControls.toggleClass('hidden', offline);
+        $whisperModelControls.toggleClass('hidden', !offline);
+    };
+
+    const applyEngineAvailability = (connectivity) => {
+        const online = connectivity?.online === true && navigator.onLine !== false;
+        const offlineAvailable = connectivity?.offline_available === true;
+        $transcriptionEngine.prop('disabled', !offlineAvailable);
+        $transcriptionEngineSwitch.toggleClass('hidden', !offlineAvailable)
+            .toggleClass('flex', offlineAvailable);
+
+        if (!online && offlineAvailable) {
+            $transcriptionEngine.prop('checked', true);
+        } else if (!offlineAvailable && online) {
+            $transcriptionEngine.prop('checked', false);
+        } else if (online && offlineAvailable) {
+            const preferred = window.localStorage.getItem(transcriptionEngineStorageKey);
+            $transcriptionEngine.prop('checked', preferred === 'offline');
+        }
+
+        const modelMissing = connectivity?.offline_model_available === false;
+        const availability = offlineAvailable
+            ? 'Offline Whisper is ready.'
+            : modelMissing
+                ? 'Install the large-v3-turbo Q8 model to enable offline transcription.'
+                : 'Offline transcription is available in the desktop app.';
+        $transcriptionEngineSwitch.attr('title', availability);
+        $transcriptionEngine.trigger('transcription-engine:availability', [{ online, offlineAvailable }]);
+        syncTranscriptionControls();
+    };
+
+    const refreshEngineAvailability = () => {
+        if (!$transcriptionEngine.length || !connectivityUrl || engineConnectivityRequest) {
+            return;
+        }
+
+        engineConnectivityRequest = $.ajax({
+            url: connectivityUrl,
+            method: 'GET',
+            cache: false,
+        })
+            .done(applyEngineAvailability)
+            .always(() => {
+                engineConnectivityRequest = null;
+            });
+    };
+
+    if ($transcriptionEngine.length) {
+        $transcriptionEngine.on('change', function () {
+            window.localStorage.setItem(transcriptionEngineStorageKey, getTranscriptionEngine());
+            syncTranscriptionControls();
+        });
+        const preferredModel = window.localStorage.getItem(whisperModelStorageKey);
+        if (preferredModel) {
+            $whisperModel.val(preferredModel);
+        }
+        $whisperModel.on('change', function () {
+            const model = getWhisperModel();
+            window.localStorage.setItem(whisperModelStorageKey, model);
+            if (!installedWhisperModels.has(model)) {
+                window.dispatchEvent(new CustomEvent('offline-model:catalog-request', { detail: { model } }));
+            }
+        });
+        window.addEventListener('offline-model:status', (event) => {
+            const models = Array.isArray(event.detail?.models) ? event.detail.models : [];
+            installedWhisperModels = new Set(models
+                .filter((model) => model.installed && model.supported !== false)
+                .map((model) => model.id));
+            models.forEach((model) => {
+                const supported = model.supported !== false;
+                const suffix = !supported ? 'Low memory' : model.installed ? 'Installed' : 'Download';
+                $whisperModel.find(`option[value="${model.id}"]`)
+                    .text(`${model.label} · ${model.size} · ${suffix}`)
+                    .prop('disabled', !supported);
+            });
+
+            if (!installedWhisperModels.has(getWhisperModel())) {
+                const fallback = models.find((model) => model.installed && model.supported !== false)?.id;
+                if (fallback) {
+                    $whisperModel.val(fallback);
+                    window.localStorage.setItem(whisperModelStorageKey, fallback);
+                }
+            }
+        });
+        window.addEventListener('online', refreshEngineAvailability);
+        window.addEventListener('offline', refreshEngineAvailability);
+        window.addEventListener('offline-model:installed', refreshEngineAvailability);
+        refreshEngineAvailability();
+        window.setInterval(refreshEngineAvailability, 30000);
+        syncTranscriptionControls();
+    }
+
     $(document).on('click', 'a[target="_blank"]', function (event) {
         const href = String($(this).attr('href') || '').trim();
 
@@ -136,6 +244,9 @@ $(function () {
         let pauseRequested = false;
         let sourceUploadXhr = null;
         let activeSectionXhr = null;
+        let activeSectionPosition = 0;
+        let activeSectionProgress = 0;
+        let activeSectionProgressTimer = null;
         let cleanedSections = [];
         let furnishInFlight = false;
         let cleanerStatus = 'Waiting';
@@ -200,7 +311,9 @@ $(function () {
 
         const getUploadCategory = () => String($categoryInput.val() || '').trim();
 
-        const getUploadLanguageCode = () => String($languageInput.val() || 'multi').trim() || 'multi';
+        const getUploadLanguageCode = () => getTranscriptionEngine() === 'offline'
+            ? 'auto'
+            : String($languageInput.val() || 'multi').trim() || 'multi';
 
         const hasCleanedUploadTranscriptForCategory = (categoryName) => (
             uploadCleanedCategoryName
@@ -244,6 +357,7 @@ $(function () {
         const resetUploadProgress = (status = 'Ready', options = {}) => {
             const { keepCancelFlag = false } = options;
 
+            stopSectionProgress();
             preparedSections = [];
             currentSessionId = '';
             currentCategoryName = '';
@@ -489,16 +603,64 @@ $(function () {
                 : 'The polished transcript will be prepared in five-minute batches after raw transcription is ready.');
         };
 
-        const updateProgress = () => {
+        const renderSectionProgress = () => {
             const total = preparedSections.length;
             const complete = preparedSections.filter((section) => section.status === 'Complete').length;
-            const visible = preparedSections.filter((section) => section.status !== 'Complete').length;
-            const percent = total > 0 ? Math.round((complete / total) * 100) : 0;
+            const nextIndex = preparedSections.findIndex((section) => section.status !== 'Complete');
+            const position = activeSectionPosition || (nextIndex >= 0 ? nextIndex + 1 : total);
+            const percent = total === 0
+                ? 0
+                : activeSectionPosition > 0
+                    ? activeSectionProgress
+                    : complete === total
+                        ? 100
+                        : 0;
 
-            $activeCount.text(String(visible));
-            $progressLabel.text(`${complete} / ${total} sections`);
+            $progressLabel.text(`Process ${position || 0} out of ${total}`);
             $progressPercent.text(`${percent}%`);
             $progress.css('width', `${percent}%`);
+        };
+
+        const stopSectionProgress = () => {
+            if (activeSectionProgressTimer) {
+                window.clearInterval(activeSectionProgressTimer);
+                activeSectionProgressTimer = null;
+            }
+
+            activeSectionPosition = 0;
+            activeSectionProgress = 0;
+        };
+
+        const beginSectionProgress = (position) => {
+            stopSectionProgress();
+            activeSectionPosition = position;
+            activeSectionProgress = 0;
+            renderSectionProgress();
+            activeSectionProgressTimer = window.setInterval(() => {
+                const remaining = 98 - activeSectionProgress;
+                activeSectionProgress = Math.min(98, activeSectionProgress + Math.max(1, Math.ceil(remaining * 0.08)));
+                renderSectionProgress();
+            }, 350);
+        };
+
+        const completeSectionProgress = async () => {
+            if (activeSectionProgressTimer) {
+                window.clearInterval(activeSectionProgressTimer);
+                activeSectionProgressTimer = null;
+            }
+
+            activeSectionProgress = 100;
+            renderSectionProgress();
+            await pause(150);
+            activeSectionPosition = 0;
+            activeSectionProgress = 0;
+        };
+
+        const updateProgress = () => {
+            const visible = preparedSections.filter((section) => section.status !== 'Complete').length;
+
+            $activeCount.text(String(visible));
+            renderSectionProgress();
             updateCleanerProgress();
             syncUploadControls();
             saveUploadState();
@@ -754,7 +916,6 @@ $(function () {
             cleanerStatus = 'Polishing';
             cleanerCompletedBatches = 0;
             uploadCleanedCategoryName = categoryName;
-            cleanedSections = [];
             $furnishButton.prop('disabled', true).text('Polishing');
             renderTranscript();
             updateCleanerProgress();
@@ -999,6 +1160,7 @@ $(function () {
 
                 preparedSections[index].status = 'Processing';
                 $status.text(`Processing ${index + 1} of ${preparedSections.length}`);
+                beginSectionProgress(index + 1);
                 renderQueue();
 
                 const section = preparedSections[index];
@@ -1012,6 +1174,8 @@ $(function () {
                 formData.append('duration_ms', String(section.durationMs || Math.max(1, section.endMs - section.startMs)));
                 formData.append('range_label', section.rangeLabel);
                 formData.append('language_code', getUploadLanguageCode());
+                formData.append('transcription_engine', getTranscriptionEngine());
+                formData.append('whisper_model', getWhisperModel());
 
                 try {
                     activeSectionXhr = $.ajax({
@@ -1022,11 +1186,18 @@ $(function () {
                         contentType: false,
                     });
                     const response = await activeSectionXhr;
-                    activeSectionXhr = null;
 
                     const chunk = response?.data || {};
                     rememberStoredUploadItem(chunk);
                     rememberUploadCategory(categoryName);
+                    await completeSectionProgress();
+
+                    if (cancelRequested) {
+                        activeSectionXhr = null;
+                        resetUploadProgress();
+                        return;
+                    }
+
                     preparedSections[index] = {
                         ...section,
                         status: 'Complete',
@@ -1036,10 +1207,12 @@ $(function () {
                             ? `${formatBytes(Number(chunk.prepared_file_size_bytes))} sent`
                             : '',
                     };
+                    activeSectionXhr = null;
                     renderQueue();
                     renderTranscript();
                 } catch (xhr) {
                     activeSectionXhr = null;
+                    stopSectionProgress();
                     if (cancelRequested || xhr?.statusText === 'abort') {
                         resetUploadProgress();
                         return;
@@ -1056,6 +1229,7 @@ $(function () {
             }
 
             const pausedWithWorkRemaining = pauseRequested && hasUnfinishedSections();
+            stopSectionProgress();
 
             if (cancelRequested) {
                 resetUploadProgress();
@@ -1761,7 +1935,9 @@ $(function () {
 
     const getCategoryName = () => String($categoryInput.val() || '').trim();
 
-    const getLanguageCode = () => String($languageInput.val() || 'multi').trim() || 'multi';
+    const getLanguageCode = () => getTranscriptionEngine() === 'offline'
+        ? 'auto'
+        : String($languageInput.val() || 'multi').trim() || 'multi';
 
     const escapeHtml = (value) => $('<div>').text(String(value || '')).html();
 
@@ -1961,7 +2137,6 @@ $(function () {
         const $button = $('[data-furnish-live]');
         $button.prop('disabled', true).text('Polishing');
         liveCleanerStatus = 'Polishing';
-        window.liveCleanedTranscriptPayload = {};
         renderStoredList();
         updateLiveCleanerProgress();
 
@@ -2461,6 +2636,8 @@ $(function () {
         formData.append('range_label', nextItem.rangeLabel);
         formData.append('duration_ms', String(nextItem.durationMs));
         formData.append('language_code', nextItem.languageCode || getLanguageCode());
+        formData.append('transcription_engine', getTranscriptionEngine());
+        formData.append('whisper_model', getWhisperModel());
 
         activeUploadXhr = $.ajax({
             url: uploadUrl,

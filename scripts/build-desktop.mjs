@@ -3,42 +3,27 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const updatePackager = path.join(projectRoot, 'scripts', 'create-update-package.mjs');
-const requestedTarget = process.argv[2] ?? 'current';
-const emptyBuild = process.argv[3] === 'empty';
-const currentTarget = process.platform === 'win32' ? 'windows' : process.platform;
+const emptyBuild = process.argv[2] === 'empty';
 
-if (!['current', 'windows', 'linux'].includes(requestedTarget)) {
-    console.error(`Unknown desktop target: ${requestedTarget}`);
+if (process.platform !== 'win32') {
+    console.error('AITranscriber desktop releases must be built on Windows.');
     process.exit(1);
 }
 
-if (requestedTarget !== 'current' && requestedTarget !== currentTarget) {
-    console.error(
-        `The ${requestedTarget} desktop app must be built on ${requestedTarget}. `
-        + `This machine is running ${currentTarget}.`,
-    );
-    process.exit(1);
-}
-
-if (!['windows', 'linux'].includes(currentTarget)) {
-    console.error(`Desktop builds are not configured for ${process.platform}.`);
-    process.exit(1);
-}
-
-const tauri = path.join(
+const tauriCli = path.join(
     projectRoot,
     'node_modules',
-    '.bin',
-    process.platform === 'win32' ? 'tauri.cmd' : 'tauri',
+    '@tauri-apps',
+    'cli',
+    'tauri.js',
 );
-const args = ['build'];
+const args = ['build', '--config', 'tauri.release.conf.json'];
 
 if (emptyBuild) {
     args.push('--config', 'tauri.empty.conf.json');
 }
 
-const child = spawn(tauri, args, {
+const child = spawn(process.execPath, [tauriCli, ...args], {
     cwd: projectRoot,
     stdio: 'inherit',
     windowsHide: true,
@@ -50,27 +35,5 @@ child.on('error', (error) => {
 });
 
 child.on('exit', (code, signal) => {
-    if (code !== 0 || signal) {
-        process.exitCode = signal ? 1 : (code ?? 1);
-        return;
-    }
-
-    const packager = spawn(
-        process.execPath,
-        [updatePackager, currentTarget, emptyBuild ? 'empty' : 'standard'],
-        {
-            cwd: projectRoot,
-            stdio: 'inherit',
-            windowsHide: true,
-        },
-    );
-
-    packager.on('error', (error) => {
-        console.error(`Unable to create update ZIP: ${error.message}`);
-        process.exitCode = 1;
-    });
-
-    packager.on('exit', (packageCode, packageSignal) => {
-        process.exitCode = packageSignal ? 1 : (packageCode ?? 1);
-    });
+    process.exitCode = signal ? 1 : (code ?? 1);
 });

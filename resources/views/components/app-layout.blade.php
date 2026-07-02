@@ -19,14 +19,20 @@
         <script src="{{ asset('loader.js') }}"></script>
         <script src="{{ asset('js/modals/sidebar.js') }}"></script>
         <script src="{{ asset('js/modals/polish-instructions.js') }}"></script>
+        <script src="{{ asset('js/modals/transcript-summary.js') }}" defer></script>
         @vite(['resources/css/app.css', 'resources/js/app.js'])
     </head>
     <body
         data-page="{{ $activePage }}"
+        data-desktop-dev="{{ config('app.desktop_dev') ? 'true' : 'false' }}"
         data-speech-provider="{{ app(\App\Services\AppSettingsService::class)->speechToTextProvider() }}"
         data-update-connectivity-url="{{ route('app-update.connectivity') }}"
         data-update-status-url="{{ route('app-update.status') }}"
         data-update-download-url="{{ route('app-update.download') }}"
+        data-offline-model-status-url="{{ route('offline-model.status') }}"
+        data-offline-model-download-url="{{ route('offline-model.download') }}"
+        data-summary-status-url="{{ route('transcripts.summary.show') }}"
+        data-summary-store-url="{{ route('transcripts.summary.store') }}"
         @if ($activePage === 'live')
             data-upload-url="{{ route('audio-chunks.store') }}"
             data-stored-url="{{ route('audio-chunks.index') }}"
@@ -60,6 +66,7 @@
 
         @if (in_array($activePage, ['live', 'upload'], true))
             @include('modals.polish-instructions')
+            @include('modals.transcript-summary')
             @include('modals.pending-clips-sidebar', ['activePage' => $activePage])
         @endif
     </body>

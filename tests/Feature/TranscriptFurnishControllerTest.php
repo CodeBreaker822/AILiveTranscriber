@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Exceptions\TranscriptPolisherException;
 use App\Services\TranscriptPolisherService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -111,6 +112,59 @@ class TranscriptFurnishControllerTest extends TestCase
         $this->assertDatabaseMissing('clean_transcript_chunks', [
             'audio_chunk_id' => $audioChunkId,
             'clean_text' => 'Polished run 1',
+        ]);
+    }
+
+    public function test_failed_repolish_preserves_the_last_good_result_and_server_error(): void
+    {
+        $audioChunkId = DB::table('audio_chunks')->insertGetId([
+            'user_id' => 1,
+            'category_name' => 'Meeting',
+            'clip_index' => 1,
+            'clip_start_ms' => 0,
+            'clip_end_ms' => 60000,
+            'range_label' => '00:00-01:00',
+            'duration_ms' => 60000,
+            'mime_type' => 'audio/wav',
+            'original_name' => 'chunk.wav',
+            'file_size_bytes' => 10,
+            'audio_blob' => 'audio',
+            'translated_text' => 'Raw transcript.',
+            'transcription_timestamps' => json_encode([]),
+            'status' => 'transcribed',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('clean_transcript_chunks')->insert([
+            'audio_chunk_id' => $audioChunkId,
+            'user_id' => 1,
+            'category_name' => 'Meeting',
+            'clip_index' => 1,
+            'clip_start_ms' => 0,
+            'clip_end_ms' => 60000,
+            'range_label' => '00:00-01:00',
+            'raw_text' => 'Raw transcript.',
+            'clean_text' => 'Last good result.',
+            'clean_timestamps' => json_encode([]),
+            'status' => 'cleaned',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $this->mock(TranscriptPolisherService::class, function ($mock): void {
+            $mock->shouldReceive('polishChunks')->once()->andThrow(
+                new TranscriptPolisherException('Provider temporarily unavailable.', 503)
+            );
+        });
+
+        $this->postJson('/transcripts/furnish', [
+            'category_name' => 'Meeting',
+            'window_index' => 0,
+            'instructions' => 'Correct grammar.',
+        ])->assertStatus(503)->assertJsonPath('message', 'Provider temporarily unavailable.');
+
+        $this->assertDatabaseHas('clean_transcript_chunks', [
+            'audio_chunk_id' => $audioChunkId,
+            'clean_text' => 'Last good result.',
         ]);
     }
 }

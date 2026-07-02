@@ -3,12 +3,16 @@
 namespace Tests\Unit;
 
 use App\Services\AppSettingsService;
+use App\Exceptions\SpeechToTextException;
+use App\Exceptions\TranscriptPolisherException;
 use App\Services\HostedTranscriptionApiService;
 use App\Services\TranscriptPolisherService;
 use App\Services\SpeechToTextService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Http\Client\ConnectionException;
 use Tests\TestCase;
 
 class HostedTranscriptionApiServiceTest extends TestCase
@@ -130,6 +134,44 @@ class HostedTranscriptionApiServiceTest extends TestCase
         });
     }
 
+    public function test_transcription_connection_details_are_logged_but_not_exposed(): void
+    {
+        config(['services.transcription_api.base_url' => 'https://dilgaims.site/api']);
+        $settings = app(AppSettingsService::class);
+        $settings->setLicenseKey('license-123');
+        $settings->setLicenseStatus($this->licenseStatusPayload());
+        $settings->setSpeechToTextProvider('deepgram');
+        $settings->setSpeechToTextModel('nova-3');
+        $audioPath = tempnam(sys_get_temp_dir(), 'aitranscriber-hosted-error-');
+        file_put_contents($audioPath, 'fake audio bytes');
+        $technicalError = 'SSL certificate problem: unable to get local issuer certificate';
+        Http::fake(function () use ($technicalError): never {
+            throw new ConnectionException($technicalError);
+        });
+        Log::spy();
+
+        try {
+            app(SpeechToTextService::class)->transcribe($audioPath, ['language_code' => 'en']);
+            $this->fail('Expected hosted transcription to fail.');
+        } catch (SpeechToTextException $exception) {
+            $this->assertSame(
+                'AITranscriber could not contact transcription server. Please try again shortly.',
+                $exception->getMessage(),
+            );
+            $this->assertStringNotContainsString($technicalError, $exception->getMessage());
+        } finally {
+            @unlink($audioPath);
+        }
+
+        Log::shouldHaveReceived('error')->withArgs(
+            fn (string $message, array $context): bool => $message === 'Hosted transcription connection failed.'
+                && $context['ca_bundle_exists'] === true
+                && collect($context['exception_chain'])->contains(
+                    fn (array $entry): bool => $entry['message'] === $technicalError
+                )
+        )->once();
+    }
+
     public function test_it_polishes_transcript_chunks_through_hosted_api(): void
     {
         config(['services.transcription_api.base_url' => 'https://dilgaims.site/api']);
@@ -205,6 +247,39 @@ class HostedTranscriptionApiServiceTest extends TestCase
         $this->assertSame('', $result['text']);
         $this->assertSame('anthropic', $result['provider']);
         $this->assertSame('claude-sonnet-4', $result['model']);
+    }
+
+    public function test_successful_empty_polish_response_is_rejected(): void
+    {
+        config(['services.transcription_api.base_url' => 'https://dilgaims.site/api']);
+        app(AppSettingsService::class)->setLicenseKey('license-123');
+        Http::fake([
+            'https://dilgaims.site/api/polish' => Http::response(['text' => ''], 200),
+        ]);
+
+        $this->expectException(TranscriptPolisherException::class);
+        $this->expectExceptionMessage('successful response without polished text');
+
+        app(TranscriptPolisherService::class)->polish('Text to polish.');
+    }
+
+    public function test_polish_failure_preserves_the_server_message_and_status(): void
+    {
+        config(['services.transcription_api.base_url' => 'https://dilgaims.site/api']);
+        app(AppSettingsService::class)->setLicenseKey('license-123');
+        Http::fake([
+            'https://dilgaims.site/api/polish' => Http::response([
+                'message' => 'Provider quota exhausted for this license.',
+            ], 429),
+        ]);
+
+        try {
+            app(TranscriptPolisherService::class)->polish('Text to polish.');
+            $this->fail('Expected polishing to fail.');
+        } catch (TranscriptPolisherException $exception) {
+            $this->assertSame('Provider quota exhausted for this license.', $exception->getMessage());
+            $this->assertSame(429, $exception->getCode());
+        }
     }
 
     private function licenseStatusPayload(): array

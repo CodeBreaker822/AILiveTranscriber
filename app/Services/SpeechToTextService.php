@@ -9,6 +9,7 @@ class SpeechToTextService
 {
     public function __construct(
         private readonly HostedTranscriptionApiService $api,
+        private readonly OfflineWhisperService $offlineWhisper,
     ) {
     }
 
@@ -18,6 +19,10 @@ class SpeechToTextService
      */
     public function transcribe(UploadedFile|string|SplFileInfo $audio, array $options = []): array
     {
+        if (($options['engine'] ?? 'online') === 'offline') {
+            return $this->offlineWhisper->transcribe($audio, $options);
+        }
+
         return $this->api->transcribe($audio, $options);
     }
 }

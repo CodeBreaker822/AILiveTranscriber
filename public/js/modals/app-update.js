@@ -19,6 +19,7 @@ $(function () {
     const connectivityUrl = String(document.body.dataset.updateConnectivityUrl || '');
     const statusUrl = String(document.body.dataset.updateStatusUrl || '');
     const downloadUrl = String(document.body.dataset.updateDownloadUrl || '');
+    const desktopDev = document.body.dataset.desktopDev === 'true';
     let updateStatus = null;
     let running = false;
 
@@ -178,5 +179,7 @@ $(function () {
     };
 
     $retry.on('click', downloadUpdate);
-    checkForUpdate();
+    if (!desktopDev) {
+        checkForUpdate();
+    }
 });

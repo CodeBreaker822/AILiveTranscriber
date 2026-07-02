@@ -1,0 +1,2 @@
+[env]
+CMAKE = { value = "C:\\Program Files\\CMake\\bin\\cmake.exe", force = false }

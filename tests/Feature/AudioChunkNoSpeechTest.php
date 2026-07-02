@@ -214,6 +214,90 @@ class AudioChunkNoSpeechTest extends TestCase
         $this->assertDatabaseCount('audio_chunks', 0);
     }
 
+    public function test_uploaded_offline_sections_flow_through_vad_and_return_whisper_text(): void
+    {
+        $segmentPath = tempnam(sys_get_temp_dir(), 'aitranscriber-offline-segment-');
+        $speechPath = tempnam(sys_get_temp_dir(), 'aitranscriber-offline-speech-');
+        file_put_contents($segmentPath, 'prepared wav bytes');
+        file_put_contents($speechPath, 'silero filtered wav bytes');
+
+        $this->mock(AudioFileChunkerService::class, function ($mock) use ($segmentPath): void {
+            $mock->shouldReceive('extractSegment')->once()->andReturn([
+                'path' => $segmentPath,
+                'name' => 'chunk_00001.wav',
+                'mime_type' => 'audio/wav',
+                'size' => filesize($segmentPath),
+                'duration_ms' => 60000,
+            ]);
+        });
+
+        $this->mock(SpeechAudioFilterService::class, function ($mock) use ($speechPath): void {
+            $mock->shouldReceive('prepare')->once()->andReturn([
+                'speech_detected' => true,
+                'audio' => [
+                    'path' => $speechPath,
+                    'name' => 'chunk_00001-speech.wav',
+                    'mime_type' => 'audio/wav',
+                    'size' => filesize($speechPath),
+                    'duration_ms' => 60000,
+                ],
+                'vad' => [
+                    'has_speech' => true,
+                    'duration_ms' => 60000,
+                    'speech_ms' => 60000,
+                    'segments' => [['start_ms' => 0, 'end_ms' => 60000]],
+                ],
+            ]);
+        });
+
+        $this->mock(SpeechToTextService::class, function ($mock) use ($speechPath): void {
+            $mock->shouldReceive('transcribe')->once()->with($speechPath, [
+                'language_code' => 'auto',
+                'clip_index' => 1,
+                'clip_start_ms' => 0,
+                'clip_end_ms' => 60000,
+                'engine' => 'offline',
+                'model' => 'tiny',
+            ])->andReturn([
+                'text' => 'Offline Whisper transcript.',
+                'timestamps' => [['text' => 'Offline Whisper transcript.', 'start' => 0, 'end' => 2]],
+                'provider' => 'whisper.cpp',
+                'model' => 'tiny-q8_0',
+            ]);
+        });
+
+        try {
+            $response = $this->postJson('/audio-chunks', [
+                'upload_session_id' => 'offline-test-session',
+                'category_name' => 'Offline meeting',
+                'clip_index' => 1,
+                'clip_start_ms' => 0,
+                'clip_end_ms' => 60000,
+                'range_label' => '00:00-01:00',
+                'duration_ms' => 60000,
+                'language_code' => 'auto',
+                'transcription_engine' => 'offline',
+                'whisper_model' => 'tiny',
+            ]);
+        } finally {
+            @unlink($segmentPath);
+            @unlink($speechPath);
+        }
+
+        $response
+            ->assertCreated()
+            ->assertJsonPath('data.source_type', 'upload')
+            ->assertJsonPath('data.translated_text', 'Offline Whisper transcript.')
+            ->assertJsonPath('data.transcription_timestamps.0.text', 'Offline Whisper transcript.');
+
+        $this->assertDatabaseHas('audio_chunks', [
+            'category_name' => 'Offline meeting',
+            'original_name' => 'chunk_00001-speech.wav',
+            'translated_text' => 'Offline Whisper transcript.',
+            'status' => 'transcribed',
+        ]);
+    }
+
     public function test_loading_chunks_deletes_existing_no_speech_rows(): void
     {
         DB::table('audio_chunks')->insert([

@@ -1,8 +1,20 @@
 # AITranscriber Project Documentation
 
-AITranscriber is a Laravel app for recording or uploading audio, splitting it into manageable sections, filtering each section through local Silero VAD, sending speech-positive audio to a hosted transcription API, storing raw transcript data locally, and optionally producing polished transcript text through the same hosted API.
+AITranscriber is a Laravel/Tauri app for recording or uploading audio, splitting it into manageable sections, filtering each section through local Silero VAD, transcribing speech-positive audio through either the hosted API or local Whisper, storing raw transcript data locally, and optionally producing polished transcript text through the hosted API.
 
-The local app is responsible for the desktop/web user interface, audio preparation, local voice-activity detection, local database persistence, playback, memory cleanup, and progress tracking. Provider credentials and direct AI-provider calls live behind the hosted API. The app talks to that server with a single license key.
+The local app is responsible for the desktop/web user interface, audio preparation, local voice-activity detection, offline Whisper inference, local database persistence, playback, memory cleanup, and progress tracking. Provider credentials and direct online AI-provider calls live behind the hosted API. The app talks to that server with a single license key.
+
+Offline transcription uses this packaged native path:
+
+```text
+Laravel transcription dispatcher
+  -> Tauri executable offline CLI mode (Rust)
+  -> whisper-rs
+  -> whisper.cpp
+  -> ggml-large-v3-turbo-q8_0.bin
+```
+
+The model is Q8_0/8-bit quantized. The app loads mono 16 kHz WAV samples produced by the existing FFmpeg and Silero VAD pipeline; no Python runtime is involved.
 
 The app has four user-facing screens:
 
@@ -27,6 +39,8 @@ Defined in `routes/web.php`.
 | GET | `/app-update/connectivity` | `app-update.connectivity` | `AppUpdateController@connectivity` | Quietly checks hosted-server reachability before any update status request. |
 | GET | `/app-update/status` | `app-update.status` | `AppUpdateController@status` | Compares the bundled local version text with the version returned by the hosted license status endpoint. |
 | GET | `/app-update/download` | `app-update.download` | `AppUpdateController@download` | Authenticates, streams, and stages the hosted update ZIP for desktop installation. |
+| GET | `/offline-model/status` | `offline-model.status` | `OfflineWhisperModelController@status` | Reports whether the local Q8 Whisper model is installed. |
+| POST | `/offline-model/download` | `offline-model.download` | `OfflineWhisperModelController@download` | Separately downloads, verifies, and installs the offline Whisper model. |
 | POST | `/settings/audio-memory/temporary` | `settings.audio-memory.temporary.clear` | `AudioMemoryController@clearTemporary` | Deletes temporary uploaded source files and generated section files from private storage. |
 | POST | `/settings/audio-memory/stored` | `settings.audio-memory.stored.clear` | `AudioMemoryController@clearStored` | Clears stored audio bytes from existing audio chunk rows. |
 | POST | `/settings/audio-memory/all` | `settings.audio-memory.all.clear` | `AudioMemoryController@clearAll` | Clears temporary upload cache and stored audio bytes in one action. |
@@ -107,7 +121,7 @@ Cleans stored raw transcripts through the hosted polishing API.
 - `store()`: validates `category_name`, optional `user_id`, optional `window_index`, and required `instructions`.
 - When `window_index` is present, only cleans one five-minute transcript window.
 - When `window_index` is absent, walks all chunks for the category and cleans them by five-minute windows.
-- Existing cleaned rows for the window are deleted before re-polishing, so changed instructions produce fresh output.
+- Existing cleaned rows are replaced only after the hosted response is validated, so a failed retry preserves the last known-good output.
 - Applies a 4-second pause between populated hosted polishing requests when cleaning multiple windows.
 
 Key behavior:
@@ -117,6 +131,7 @@ Key behavior:
 - Polishing is grouped by `clip_start_ms` in five-minute windows.
 - `instruction_hash` stores the SHA-256 hash of the instructions used for the cleaned output.
 - The hosted server selects the active polishing provider. The local app stores the returned `provider` and `model` with each cleaned row.
+- Hosted non-success status codes and error messages are returned unchanged to the interface. Successful responses with invalid JSON, missing chunks, or blank polished/summary text are treated as failures instead of being persisted as complete.
 - If no raw transcript rows exist for the category, the endpoint returns 404.
 - If a requested single window has no chunks, the endpoint returns a successful empty result.
 
@@ -193,6 +208,8 @@ Upload page data attributes:
 Shared navigation header.
 
 - Links to Live and Upload pages.
+- Shows an independent `Download Offline` button and a visual progress modal.
+- The offline-model modal can be minimized into a bottom-right progress dock and restored, allowing the user to keep working during the model download and verification.
 - Includes a settings icon link.
 - Highlights the active page using the `activePage` prop.
 - Displays the app identity and short purpose text.
@@ -373,9 +390,22 @@ Responsibilities:
 
 ### `SpeechToTextService`
 
-Thin local wrapper around `HostedTranscriptionApiService`.
+Dispatches prepared audio according to the request's `transcription_engine` value.
 
-- `transcribe()`: forwards an uploaded file, file path, or `SplFileInfo` plus options to the hosted API client.
+- `online` (or omitted): forwards to `HostedTranscriptionApiService`.
+- `offline`: forwards to `OfflineWhisperService` and the native Rust Whisper CLI mode.
+
+### `OfflineWhisperService`
+
+Runs only on the already prepared speech-positive WAV, so local transcription reuses the same chunk extraction, mono 16 kHz conversion, and Silero VAD filtering as hosted transcription.
+
+- Resolves the current Tauri executable from `AI_TRANSCRIBER_EXECUTABLE`.
+- Resolves `ggml-large-v3-turbo-q8_0.bin` from `WHISPER_MODEL_PATH`.
+- Starts the executable with `--offline-whisper`, audio/model/language arguments, and a private JSON output file.
+- Allows up to `WHISPER_TRANSCRIPTION_TIMEOUT` seconds per chunk.
+- Normalizes the Rust response to the existing text/timestamps/provider/model shape.
+
+The Tauri launcher injects the executable and packaged model paths into Laravel. Browser-only development can set both environment variables manually.
 
 ### `TranscriptPolisherService`
 
@@ -568,6 +598,28 @@ Important keys:
 
 ## Environment And Runtime Notes
 
+### Offline Whisper model
+
+The 8-bit model is intentionally not committed to Git. In the app, click `Download Offline` in the shared header. A visual modal tracks the roughly 874 MB download, checksum verification, and installation. It can be minimized into a compact bottom-right progress dock without stopping the download. The verified model is saved under writable private app storage, and the header changes to `Offline Ready`.
+
+This model installer is independent of application update checking and update ZIP installation. It uses `/offline-model/*`; the updater continues to use `/app-update/*`. The application-update modal is intentionally not minimizable because interacting with the app while its executable and resources are being replaced could leave the installation inconsistent.
+
+Offline model connection failures log the requested URL, CA bundle path/status, complete exception chain, and available HTTP handler context to the Laravel log. HTTP error responses also record their status and response body. The installer shows only a safe retry message; DNS, TLS, proxy, timeout, provider, and internal errors are never exposed in the UI.
+
+All Laravel HTTP clients explicitly verify TLS with the bundled `php/extras/ssl/cacert.pem` resolved from the current installation directory, avoiding the stale machine-specific path in `php.ini`. Local and Tauri launchers also export that absolute path through `CURL_CA_BUNDLE`, `SSL_CERT_FILE`, and `AI_TRANSCRIBER_CA_BUNDLE`.
+
+The offline installer uses PHP's cURL extension directly rather than Guzzle's `fopen` streaming handler. It follows redirects, streams NDJSON progress events to the modal, and records cURL status/error details only in Laravel logs. If the official Hugging Face source cannot connect or returns an HTTP error, it automatically tries `WHISPER_FALLBACK_MODEL_URL`. The same published SHA-1 is verified before either source can be installed.
+
+For local development, the PowerShell helper remains available:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/download-whisper-model.ps1
+```
+
+The script downloads the official whisper.cpp `ggml-large-v3-turbo-q8_0.bin` model (about 874 MB), verifies its published SHA-1, and places it under `storage/app/private/whisper/models/`. Model weights are never included in the NSIS installer or update ZIP; every installed app downloads them separately into writable app-data storage when the user chooses `Download Offline`.
+
+The upload and live pages probe `/app-update/connectivity` every 30 seconds. Online is the default and is labeled as faster. If the hosted API becomes unreachable and the local model is installed, the selector changes to Offline automatically. When connectivity returns, the last explicit user preference is restored. Unavailable choices are disabled.
+
 This project includes local Windows runtimes:
 
 - `php/php.exe`
@@ -579,50 +631,11 @@ This project includes local Windows runtimes:
 - `vad-cli/target/release/vad-cli.exe` during local development after `build:vad`
 - `vad/vad-cli.exe` inside packaged Tauri resources
 
-### Linux Development
-
-Linux Bash must use the system `node`, `npm`, `php`, `ffmpeg`, and `ffprobe`
-commands. Windows paths such as `.\node\npm.cmd` do not run in Bash.
-
-Fedora development prerequisites:
-
-```bash
-sudo dnf install gcc gcc-c++ make webkit2gtk4.1-devel librsvg2-devel \
-  libappindicator-gtk3-devel openssl-devel patchelf
-
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source "$HOME/.cargo/env"
-```
-
-Install JavaScript dependencies and launch the local desktop application:
-
-```bash
-npm install
-npm run tauri:dev
-```
-
-For browser-only local development, run:
-
-```bash
-npm run dev:local
-```
-
-The local supervisor starts Laravel at `http://127.0.0.1:8010`, the queue worker,
-and Vite. The Linux Tauri binary is named `aitranscriber`; this avoids a filesystem
-collision with the bundled Laravel `app/` resource directory.
-
-Command meanings:
-
-- `npm run build` builds frontend assets only. It does not create a desktop installer.
-- `npm run tauri:dev` compiles and launches the local desktop development app.
-- `npm run tauri:build:linux` creates Linux AppImage and deb packages.
-- `npm run release:windows` creates the standalone Windows NSIS installer when run on Windows.
-
-Linux package output is written below `src-tauri/target/release/bundle/`. Linux
-packages currently use PHP, FFmpeg, and FFprobe from the target system's `PATH`;
-the standalone bundled-runtime guarantee described below applies to Windows.
-
 ### Windows Development And Release
+
+Desktop builds require the Rust toolchain and Microsoft C++ Build Tools. Install
+Rust with the official `rustup-init.exe`; project npm commands automatically add
+Rust's default `%USERPROFILE%\.cargo\bin` directory to `PATH`.
 
 Windows local development commands:
 
@@ -638,7 +651,7 @@ Build the standalone Windows NSIS `.exe` on Windows:
 
 ```powershell
 .\node\npm.cmd install
-.\node\npm.cmd run release:windows
+.\node\npm.cmd run tauri:build
 ```
 
 The installer is written under:
@@ -647,31 +660,44 @@ The installer is written under:
 src-tauri\target\release\bundle\nsis\
 ```
 
-After every desktop build, the builder asks the developer where to save a ZIP
-for server-delivered in-place updates. Press Enter to use
+Installer builds and server update packages are separate operations. `tauri:build`
+creates the NSIS installer only. To create a server-delivered update ZIP from the
+existing `src-tauri/target/release` layout without building another installer, run:
+
+```powershell
+.\node\npm.cmd run tauri:package
+```
+
+The packager asks where to save the ZIP. Press Enter to use
 `src-tauri/target/release/bundle/updates`, or set
-`AITRANSCRIBER_UPDATE_OUTPUT_DIR` for non-interactive builds. The ZIP contains
+`AITRANSCRIBER_UPDATE_OUTPUT_DIR` for non-interactive packaging. The ZIP contains
 the desktop executable, Laravel application code, compiled frontend assets,
 Composer dependencies, VAD, and the platform runtimes needed by that build.
-The builder also asks for release notes and creates or replaces `version.json`
+The packager also asks for release notes and creates or replaces `version.json`
 beside the ZIP with the build version and notes. Automated builds can provide
 the notes through `AITRANSCRIBER_UPDATE_NOTES`.
 
-Update ZIPs never contain `.env`, `database/database.sqlite`, or `storage`.
+Upload the generated ZIP and `version.json` to the hosted server backing
+`GET /api/transcribe/update/zipfile` and the license-status version metadata.
+
+Update ZIPs never contain `.env`, `database/database.sqlite`, `storage`, or
+`whisper`. The downloaded offline model remains in writable app-data storage and
+is preserved across application updates rather than being uploaded to the server.
 The updater must stop AITranscriber before extracting the ZIP over the Windows
 installation directory, then restart it. On startup, Laravel runs included
 database migrations against the existing database stored in the user's app-data
-directory. Linux AppImage releases should update by replacing the AppImage rather
-than extracting the resource ZIP into the read-only mounted application.
+directory.
 
-Use `.\node\npm.cmd run release:windows:empty` when the installer must contain a
+Use `.\node\npm.cmd run tauri:build:empty` when the installer must contain a
 fresh migrated database without default license settings or user data. The normal
-release command preserves configured default license settings while removing
+build command preserves configured default license settings while removing
 transcript and audio rows from the bundled database snapshot.
 
 The Windows package includes PHP, FFmpeg, FFprobe, the Windows VAD executable,
 Laravel application files, Composer dependencies, frontend assets, and the prepared
-SQLite database. End users do not need global PHP, Node, Rust, or FFmpeg installs.
+SQLite database. It includes the native whisper.cpp engine in the executable but
+not the roughly 874 MB model weights. End users do not need global PHP, Node, Rust,
+or FFmpeg installs.
 
 Equivalent direct Windows commands remain available:
 
@@ -682,13 +708,18 @@ Equivalent direct Windows commands remain available:
 .\node\npm.cmd run build
 .\node\npm.cmd run build:vad
 .\php\php.exe artisan serve --host=127.0.0.1 --port=8010
-.\node\npm.cmd run release:windows
-.\node\npm.cmd run release:windows:empty
+.\node\npm.cmd run tauri:build
+.\node\npm.cmd run tauri:build:empty
+.\node\npm.cmd run tauri:package
+.\node\npm.cmd run tauri:package:empty
 ```
 
-`release:windows` packages the prepared default database and built VAD CLI.
-`release:windows:empty` creates and packages a fresh migrated database with no
+`tauri:build` packages the prepared default database and built VAD CLI.
+`tauri:build:empty` creates and packages a fresh migrated database with no
 license settings, transcript rows, audio rows, or other user data.
+`tauri:package` creates only the standard update ZIP and server `version.json`;
+`tauri:package:empty` applies the `empty` update filename/manifest label. Neither
+package command invokes Tauri or creates an installer.
 
 Required hosted API configuration:
 

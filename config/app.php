@@ -28,6 +28,8 @@ return [
 
     'env' => env('APP_ENV', 'production'),
 
+    'desktop_dev' => (bool) env('AI_TRANSCRIBER_DESKTOP_DEV', false),
+
     /*
     |--------------------------------------------------------------------------
     | Application Debug Mode

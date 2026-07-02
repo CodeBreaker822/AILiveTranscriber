@@ -6,8 +6,7 @@
   "build": {
     "beforeDevCommand": "node scripts/dev-local.mjs",
     "beforeBuildCommand": "node scripts/prepare-desktop.mjs",
-    "devUrl": "http://127.0.0.1:8010",
-    "frontendDist": "../public"
+    "devUrl": "http://127.0.0.1:8010/up"
   },
   "app": {
     "withGlobalTauri": true,
@@ -17,9 +16,8 @@
         "width": 1200,
         "height": 800,
         "resizable": true,
-        "visible": false,
-        "fullscreen": false,
-        "url": "http://127.0.0.1:8010"
+        "visible": true,
+        "fullscreen": false
       }
     ],
     "security": {
@@ -35,24 +33,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": {
-      "../build/vad": "vad",
-      "../artisan": "artisan",
-      "../composer.json": "composer.json",
-      "../app": "app",
-      "../bootstrap": "bootstrap",
-      "../config": "config",
-      "../build/tauri/database/database.sqlite": "database/database.sqlite",
-      "../build/tauri/version.json": "version.json",
-      "../database/factories": "database/factories",
-      "../database/migrations": "database/migrations",
-      "../database/seeders": "database/seeders",
-      "../public": "public",
-      "../resources": "resources",
-      "../routes": "routes",
-      "../vendor": "vendor",
-      "../.env": ".env"
-    },
     "android": {
       "debugApplicationIdSuffix": ".debug"
     }

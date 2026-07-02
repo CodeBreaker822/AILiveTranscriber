@@ -29,8 +29,14 @@ Thumbs.db
 /src-tauri
 !/src-tauri/
 /src-tauri/*
+!/src-tauri/Cargo.toml
+!/src-tauri/Cargo.lock
+!/src-tauri/build.rs
+!/src-tauri/src/
+!/src-tauri/src/**
 !/src-tauri/icons/
 !/src-tauri/icons/**
 !/src-tauri/tauri.linux.conf.json
 !/src-tauri/tauri.windows.conf.json
 /vad-cli/target
+/whisper/models/*.bin

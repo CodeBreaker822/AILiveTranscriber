@@ -17,18 +17,17 @@ import { fileURLToPath } from 'node:url';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const releaseRoot = path.join(projectRoot, 'src-tauri', 'target', 'release');
-const target = process.argv[2] ?? (process.platform === 'win32' ? 'windows' : 'linux');
-const buildType = process.argv[3] === 'empty' ? 'empty' : 'standard';
+const buildType = process.argv[2] === 'empty' ? 'empty' : 'standard';
 
-if (!['windows', 'linux'].includes(target)) {
-    throw new Error(`Unsupported update package target: ${target}`);
+if (process.platform !== 'win32') {
+    throw new Error('AITranscriber update packages must be built on Windows.');
 }
 
 const tauriConfig = JSON.parse(
     readFileSync(path.join(projectRoot, 'src-tauri', 'tauri.conf.json'), 'utf8'),
 );
 const version = tauriConfig.version;
-const platformName = `${target}-${process.arch}`;
+const platformName = `windows-${process.arch}`;
 const defaultOutputDirectory = path.join(releaseRoot, 'bundle', 'updates');
 
 const commonPayload = [
@@ -48,9 +47,20 @@ const commonPayload = [
     'vad',
 ];
 
-const payload = target === 'windows'
-    ? ['aitranscriber.exe', ...commonPayload, 'php', 'ffmpeg']
-    : ['aitranscriber', ...commonPayload];
+const payload = ['aitranscriber.exe', ...commonPayload, 'php', 'ffmpeg'];
+for (const relativePath of payload) {
+    const normalized = relativePath.replaceAll('\\', '/').toLowerCase();
+    const protectedPath = normalized === '.env'
+        || normalized === 'database/database.sqlite'
+        || normalized === 'storage'
+        || normalized.startsWith('storage/')
+        || normalized === 'whisper'
+        || normalized.startsWith('whisper/');
+
+    if (protectedPath) {
+        throw new Error(`Update payload includes protected path: ${relativePath}`);
+    }
+}
 
 function run(command, args, options = {}) {
     return new Promise((resolve, reject) => {
@@ -160,26 +170,25 @@ function assertProtectedFilesAreAbsent(directory) {
             continue;
         }
 
-        if (entry.name === '.env' || entry.name.toLowerCase() === 'database.sqlite') {
+        if (
+            entry.name === '.env'
+            || entry.name.toLowerCase() === 'database.sqlite'
+            || entry.name.toLowerCase() === 'ggml-large-v3-turbo-q8_0.bin'
+        ) {
             throw new Error(`Refusing to package protected user file: ${entryPath}`);
         }
     }
 }
 
 async function zipDirectory(stagingDirectory, destination) {
-    if (process.platform === 'win32') {
-        const escapePowerShell = (value) => value.replaceAll("'", "''");
-        const command = [
-            `$source = '${escapePowerShell(stagingDirectory)}'`,
-            `$destination = '${escapePowerShell(destination)}'`,
-            'Compress-Archive -Path (Join-Path $source \"*\") -DestinationPath $destination -CompressionLevel Optimal -Force',
-        ].join('; ');
+    const escapePowerShell = (value) => value.replaceAll("'", "''");
+    const command = [
+        `$source = '${escapePowerShell(stagingDirectory)}'`,
+        `$destination = '${escapePowerShell(destination)}'`,
+        'Compress-Archive -Path (Join-Path $source \"*\") -DestinationPath $destination -CompressionLevel Optimal -Force',
+    ].join('; ');
 
-        await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command]);
-        return;
-    }
-
-    await run('zip', ['-q', '-r', destination, '.'], { cwd: stagingDirectory });
+    await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command]);
 }
 
 const outputDirectory = await chooseOutputDirectory();
@@ -207,15 +216,15 @@ try {
             version,
             target: platformName,
             buildType,
-            extractInto: target === 'windows'
-                ? 'AITranscriber installation directory'
-                : 'external updater staging directory',
+            extractInto: 'AITranscriber installation directory',
             requiresAppShutdown: true,
             protectedPaths: [
                 '.env',
                 'database/database.sqlite',
                 'storage',
+                'whisper',
             ],
+            serverApiPath: '/api/transcribe/update/zipfile',
             payload,
         }, null, 2)}\n`,
     );
@@ -234,7 +243,8 @@ try {
 
     console.log(`Update ZIP created: ${destination}`);
     console.log(`Version metadata updated: ${versionFile}`);
-    console.log('Protected user files were not included: .env, database/database.sqlite, storage/');
+    console.log('Excluded from update ZIP: .env, database/database.sqlite, storage/, whisper/');
+    console.log('Server delivery path: /api/transcribe/update/zipfile');
 } finally {
     rmSync(stagingDirectory, { recursive: true, force: true });
     rmSync(temporaryDestination, { force: true });
