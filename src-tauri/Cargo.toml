@@ -22,6 +22,10 @@ path = "src/main.rs"
 tauri-build = { version = "2.6.2", features = [] }
 serde_json = "1.0"
 
+[features]
+default = []
+vulkan = ["whisper-rs/vulkan"]
+
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
@@ -29,7 +33,7 @@ log = "0.4"
 tauri = { version = "2.11.2", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
-whisper-rs = "=0.16.0"
+whisper-rs = { version = "=0.16.0", default-features = false }
 hound = "3.5"
 sherpa-onnx = { version = "=1.13.3", default-features = false, features = ["shared"] }
 windows-sys = { version = "0.61", features = ["Win32_System_SystemInformation", "Win32_System_Threading"] }

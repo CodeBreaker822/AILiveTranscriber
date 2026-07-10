@@ -20,10 +20,12 @@ pub struct OfflineTranscription {
 pub struct OfflineWhisperEngine {
     model_path: PathBuf,
     context: WhisperContext,
+    gpu_requested: bool,
+    gpu_enabled: bool,
 }
 
 impl OfflineWhisperEngine {
-    pub fn load(model_path: &Path) -> Result<Self, String> {
+    pub fn load(model_path: &Path, use_gpu: bool) -> Result<Self, String> {
         if !model_path.is_file() {
             return Err(format!(
                 "Whisper model is missing: {}",
@@ -31,18 +33,53 @@ impl OfflineWhisperEngine {
             ));
         }
 
-        let context =
-            WhisperContext::new_with_params(model_path, WhisperContextParameters::default())
-                .map_err(|error| format!("failed to load the offline Whisper model: {error}"))?;
+        let (context, gpu_enabled) = if use_gpu {
+            match Self::load_context(model_path, true) {
+                Ok(context) => (context, true),
+                Err(gpu_error) => (
+                    Self::load_context(model_path, false).map_err(|cpu_error| {
+                        format!(
+                            "GPU initialization failed ({gpu_error}); CPU fallback failed ({cpu_error})"
+                        )
+                    })?,
+                    false,
+                ),
+            }
+        } else {
+            (Self::load_context(model_path, false)?, false)
+        };
 
         Ok(Self {
             model_path: model_path.to_path_buf(),
             context,
+            gpu_requested: use_gpu,
+            gpu_enabled,
         })
     }
 
-    pub fn uses_model(&self, model_path: &Path) -> bool {
-        self.model_path == model_path
+    pub fn load_cpu_fallback(model_path: &Path) -> Result<Self, String> {
+        Ok(Self {
+            model_path: model_path.to_path_buf(),
+            context: Self::load_context(model_path, false)?,
+            gpu_requested: true,
+            gpu_enabled: false,
+        })
+    }
+
+    fn load_context(model_path: &Path, use_gpu: bool) -> Result<WhisperContext, String> {
+        let mut parameters = WhisperContextParameters::default();
+        parameters.use_gpu(use_gpu);
+
+        WhisperContext::new_with_params(model_path, parameters)
+            .map_err(|error| format!("failed to load the offline Whisper model: {error}"))
+    }
+
+    pub fn uses_configuration(&self, model_path: &Path, use_gpu: bool) -> bool {
+        self.model_path == model_path && self.gpu_requested == use_gpu
+    }
+
+    pub fn gpu_enabled(&self) -> bool {
+        self.gpu_enabled
     }
 
     pub fn transcribe(
@@ -139,8 +176,9 @@ pub fn transcribe(
     audio_path: &Path,
     language: Option<&str>,
     thread_budget: usize,
+    use_gpu: bool,
 ) -> Result<OfflineTranscription, String> {
-    OfflineWhisperEngine::load(model_path)?.transcribe(
+    OfflineWhisperEngine::load(model_path, use_gpu)?.transcribe(
         audio_path,
         language,
         thread_budget,

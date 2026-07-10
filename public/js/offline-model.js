@@ -206,7 +206,6 @@
             } catch (error) {
                 if (safeFallback) {
                     currentStatus = { installed: false, default_model: 'turbo', models: [] };
-                    syncHeader(currentStatus);
                     dispatchStatus(currentStatus);
                 }
 
@@ -384,8 +383,7 @@
             openCatalog(model);
         });
 
-        // Safe initial state: a failed verifier must never expose the offline switch.
-        syncHeader({ installed: false, models: [] });
+        // Blade renders the initial header state so navigation does not wait on JavaScript.
         refreshStatus({ safeFallback: true }).catch(() => {});
     });
 })();

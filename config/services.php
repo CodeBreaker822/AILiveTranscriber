@@ -48,6 +48,9 @@ return [
         'logical_processors' => env('AI_TRANSCRIBER_LOGICAL_PROCESSORS', env('NUMBER_OF_PROCESSORS', 0)),
         'total_memory_mb' => env('AI_TRANSCRIBER_TOTAL_MEMORY_MB', 0),
         'available_memory_mb' => env('AI_TRANSCRIBER_AVAILABLE_MEMORY_MB', 0),
+        'gpu_available' => env('AI_TRANSCRIBER_GPU_AVAILABLE', false),
+        'gpu_name' => env('AI_TRANSCRIBER_GPU_NAME', ''),
+        'gpu_vram_mb' => env('AI_TRANSCRIBER_GPU_VRAM_MB', 0),
     ],
 
     'speaker_diarization' => [
@@ -76,6 +79,7 @@ return [
         'timeout' => env('WHISPER_TRANSCRIPTION_TIMEOUT', 1800),
         'threads' => env('AI_TRANSCRIBER_WHISPER_THREADS', 2),
         'memory_budget_mb' => env('AI_TRANSCRIBER_WHISPER_MEMORY_BUDGET_MB', 0),
+        'gpu_vram_budget_mb' => env('AI_TRANSCRIBER_WHISPER_GPU_VRAM_BUDGET_MB', 0),
     ],
 
     'ses' => [

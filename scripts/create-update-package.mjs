@@ -73,7 +73,11 @@ const payload = [
 ];
 for (const relativePath of payload) {
     const normalized = relativePath.replaceAll('\\', '/').toLowerCase();
-    const protectedPath = normalized === '.env'
+    const protectedPath = normalized === '.git'
+        || normalized.startsWith('.git/')
+        || normalized === '.git-broken'
+        || normalized.startsWith('.git-broken/')
+        || normalized === '.env'
         || normalized === 'database/database.sqlite'
         || normalized === 'storage'
         || normalized.startsWith('storage/')
@@ -83,6 +87,12 @@ for (const relativePath of payload) {
     if (protectedPath) {
         throw new Error(`Update payload includes protected path: ${relativePath}`);
     }
+}
+
+function isGitMetadataPath(value) {
+    return path.normalize(value)
+        .split(path.sep)
+        .some((part) => ['.git', '.git-broken'].includes(part.toLowerCase()));
 }
 
 function run(command, args, options = {}) {
@@ -180,7 +190,11 @@ function copyPayload(stagingDirectory) {
 
         const destination = path.join(stagingDirectory, relativePath);
         mkdirSync(path.dirname(destination), { recursive: true });
-        cpSync(source, destination, { recursive: true, force: true });
+        cpSync(source, destination, {
+            recursive: true,
+            force: true,
+            filter: (sourcePath) => !isGitMetadataPath(sourcePath),
+        });
     }
 }
 
@@ -204,6 +218,10 @@ function assertProtectedFilesAreAbsent(directory) {
         const entryPath = path.join(directory, entry.name);
 
         if (entry.isDirectory()) {
+            if (['.git', '.git-broken'].includes(entry.name.toLowerCase())) {
+                throw new Error(`Refusing to package Git metadata: ${entryPath}`);
+            }
+
             assertProtectedFilesAreAbsent(entryPath);
             continue;
         }
@@ -258,6 +276,8 @@ try {
             extractInto: 'AITranscriber installation directory',
             requiresAppShutdown: true,
             protectedPaths: [
+                '.git',
+                '.git-broken',
                 '.env',
                 'database/database.sqlite',
                 'storage',
@@ -282,7 +302,7 @@ try {
 
     console.log(`Update ZIP created: ${destination}`);
     console.log(`Version metadata updated: ${versionFile}`);
-    console.log('Excluded from update ZIP: .env, database/database.sqlite, storage/, whisper/');
+    console.log('Excluded from update ZIP: .git/, .git-broken/, .env, database/database.sqlite, storage/, whisper/');
     console.log('Server delivery path: /api/transcribe/update/zipfile');
 } finally {
     rmSync(stagingDirectory, { recursive: true, force: true });

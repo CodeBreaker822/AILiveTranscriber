@@ -29,10 +29,15 @@ class UpdatePackageConfigurationTest extends TestCase
         preg_match('/const commonPayload = \[(.*?)\];/s', $script, $matches);
         $payloadDeclaration = $matches[1] ?? '';
 
+        $this->assertStringNotContainsString("'.git'", $payloadDeclaration);
         $this->assertStringNotContainsString("'whisper'", $payloadDeclaration);
+        $this->assertStringNotContainsString("'.git-broken'", $payloadDeclaration);
+        $this->assertStringContainsString("filter: (sourcePath) => !isGitMetadataPath(sourcePath)", $script);
+        $this->assertStringContainsString("['.git', '.git-broken']", $script);
         $this->assertStringContainsString("'whisper'", $script);
         $this->assertStringContainsString("serverApiPath: '/api/transcribe/update/zipfile'", $script);
         $this->assertStringContainsString("'ggml-large-v3-turbo-q8_0.bin'", $script);
+        $this->assertStringNotContainsString("'vulkan-1.dll'", $script);
     }
 
     public function test_tauri_installer_resources_exclude_whisper_weights(): void
@@ -43,8 +48,13 @@ class UpdatePackageConfigurationTest extends TestCase
         );
         $resources = $config['bundle']['resources'] ?? [];
 
+        $this->assertArrayNotHasKey('../.git', $resources);
         $this->assertArrayNotHasKey('../whisper', $resources);
+        $this->assertArrayNotHasKey('../.git-broken', $resources);
+        $this->assertNotContains('.git', array_values($resources), true);
         $this->assertNotContains('whisper', array_values($resources), true);
+        $this->assertNotContains('.git-broken', array_values($resources), true);
+        $this->assertArrayNotHasKey('target/release/vulkan-1.dll', $resources);
     }
 
     public function test_windows_updater_uses_a_writable_current_user_install_and_preflights_permissions(): void

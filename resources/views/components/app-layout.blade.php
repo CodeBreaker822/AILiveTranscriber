@@ -5,6 +5,7 @@
 
 @php
     $resourceProfile = app(\App\Services\AppSettingsService::class)->resourceProfile();
+    $hasOfflineTranscriptionModel = app(\App\Services\OfflineWhisperModelService::class)->hasSupportedInstalledModel();
     $transcribeMaxBatchDurationMs = app(\App\Services\AppSettingsService::class)->transcribeMaxBatchDurationMs() ?? 1200000;
     $transcribeMaxBatchClips = app(\App\Services\AppSettingsService::class)->transcribeMaxBatchClips() ?? 20;
 @endphp
@@ -42,6 +43,8 @@
         data-summary-store-url="{{ route('transcripts.summary.store') }}"
         data-resource-cpu-threads="{{ $resourceProfile['cpu_threads'] }}"
         data-resource-memory-budget-mb="{{ $resourceProfile['memory_budget_mb'] }}"
+        data-resource-gpu-available="{{ $resourceProfile['gpu_available'] ? 'true' : 'false' }}"
+        data-resource-gpu-vram-budget-mb="{{ $resourceProfile['gpu_vram_budget_mb'] }}"
         @if ($activePage === 'live')
             data-upload-url="{{ route('audio-chunks.store') }}"
             data-stored-url="{{ route('audio-chunks.index') }}"
@@ -68,7 +71,10 @@
     >
         <div data-app-shell class="h-full p-3 sm:p-4">
             <div data-app-frame class="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col gap-3">
-                <x-app-header :active-page="$activePage" />
+                <x-app-header
+                    :active-page="$activePage"
+                    :has-offline-transcription-model="$hasOfflineTranscriptionModel"
+                />
 
                 <main data-app-main class="min-h-0 flex-1 {{ in_array($activePage, ['live', 'upload'], true) ? 'overflow-hidden' : 'overflow-y-auto' }}">
                     {{ $slot }}

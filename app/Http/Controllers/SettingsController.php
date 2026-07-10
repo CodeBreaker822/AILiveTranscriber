@@ -68,8 +68,12 @@ class SettingsController extends Controller
         $resourceProfile = $settings->resourceProfile();
         $maxCpuThreads = max(1, (int) $resourceProfile['max_cpu_threads']);
         $maxMemoryBudgetMb = max(0, (int) $resourceProfile['max_memory_budget_mb']);
+        $maxGpuVramBudgetMb = max(0, (int) $resourceProfile['max_gpu_vram_budget_mb']);
         $memoryRules = $maxMemoryBudgetMb > 0
             ? ['nullable', 'integer', 'min:1', 'max:'.$maxMemoryBudgetMb]
+            : ['nullable', 'integer', 'min:0', 'max:0'];
+        $gpuVramRules = $maxGpuVramBudgetMb > 0
+            ? ['nullable', 'integer', 'min:0', 'max:'.$maxGpuVramBudgetMb]
             : ['nullable', 'integer', 'min:0', 'max:0'];
 
         $validated = $request->validate([
@@ -80,6 +84,7 @@ class SettingsController extends Controller
             'resource_mode' => ['nullable', 'string', 'in:auto,manual'],
             'resource_cpu_threads' => ['nullable', 'integer', 'min:1', 'max:'.$maxCpuThreads],
             'resource_memory_budget_mb' => $memoryRules,
+            'resource_gpu_vram_budget_mb' => $gpuVramRules,
         ]);
 
         $settings->setApiBaseUrl((string) $validated['api_base_url']);
@@ -108,6 +113,7 @@ class SettingsController extends Controller
             (string) ($validated['resource_mode'] ?? 'auto'),
             (int) ($validated['resource_cpu_threads'] ?? $resourceProfile['auto_cpu_threads']),
             (int) ($validated['resource_memory_budget_mb'] ?? $resourceProfile['auto_memory_budget_mb']),
+            (int) ($validated['resource_gpu_vram_budget_mb'] ?? $resourceProfile['auto_gpu_vram_budget_mb']),
         );
 
         return redirect()

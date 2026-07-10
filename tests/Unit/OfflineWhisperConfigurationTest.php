@@ -40,7 +40,7 @@ class OfflineWhisperConfigurationTest extends TestCase
         $service = file_get_contents($root.'/app/Services/OfflineWhisperService.php');
 
         $this->assertStringContainsString('pub struct OfflineWhisperEngine', $engine);
-        $this->assertStringContainsString('loaded.uses_model(&model_path)', $worker);
+        $this->assertStringContainsString('loaded.uses_configuration(&model_path, use_gpu)', $worker);
         $this->assertStringContainsString('let mut engine: Option<OfflineWhisperEngine> = None', $worker);
         $this->assertStringContainsString('IDLE_MODEL_TIMEOUT', $worker);
         $this->assertStringContainsString('offline_whisper_worker::start', $main);
@@ -104,11 +104,14 @@ class OfflineWhisperConfigurationTest extends TestCase
         $root = dirname(__DIR__, 2);
         $main = file_get_contents($root.'/src-tauri/src/main.rs');
         $whisper = file_get_contents($root.'/src-tauri/src/offline_whisper.rs');
+        $worker = file_get_contents($root.'/src-tauri/src/offline_whisper_worker.rs');
         $service = file_get_contents($root.'/app/Services/OfflineWhisperService.php');
 
         $this->assertStringContainsString('struct ResourceProfile', $main);
         $this->assertStringContainsString('AI_TRANSCRIBER_WHISPER_THREADS', $main);
         $this->assertStringContainsString('AI_TRANSCRIBER_WHISPER_MEMORY_BUDGET_MB', $main);
+        $this->assertStringContainsString('AI_TRANSCRIBER_WHISPER_GPU_VRAM_BUDGET_MB', $main);
+        $this->assertStringContainsString('detect_whisper_gpu()', $main);
         $this->assertStringContainsString('whisper_memory_budget(total_memory_mb)', $main);
         $this->assertStringNotContainsString('available_memory_mb.saturating_mul(2)', $main);
         $this->assertStringContainsString('BELOW_NORMAL_PRIORITY_CLASS', $main);
@@ -117,6 +120,13 @@ class OfflineWhisperConfigurationTest extends TestCase
         $this->assertStringContainsString('logical_processors * 3 / 5', $main);
         $this->assertStringNotContainsString('clamp(1, 6)', $main.$whisper);
         $this->assertStringContainsString("'--threads'", $service);
+        $this->assertStringContainsString("\$useGpu ? '--gpu' : '--cpu'", $service);
+        $this->assertStringContainsString('parameters.use_gpu(use_gpu)', $whisper);
+        $this->assertStringContainsString('#[cfg(feature = "vulkan")]', $main);
+        $this->assertStringContainsString('whisper_rs::vulkan::list_devices', $main);
+        $this->assertStringContainsString('#[cfg(not(feature = "vulkan"))]', $main);
+        $this->assertStringContainsString('OfflineWhisperEngine::load_cpu_fallback', $worker);
+        $this->assertStringContainsString('OfflineWhisperEngine::gpu_enabled', $worker);
         $this->assertStringContainsString('Choose a smaller model', $service);
     }
 }

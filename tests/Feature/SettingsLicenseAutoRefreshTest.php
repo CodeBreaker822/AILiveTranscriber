@@ -80,6 +80,10 @@ class SettingsLicenseAutoRefreshTest extends TestCase
             'services.whisper.memory_budget_mb' => 4096,
             'services.resources.logical_processors' => 8,
             'services.resources.total_memory_mb' => 8192,
+            'services.resources.gpu_available' => true,
+            'services.resources.gpu_name' => 'Test Vulkan GPU',
+            'services.resources.gpu_vram_mb' => 4096,
+            'services.whisper.gpu_vram_budget_mb' => 3072,
         ]);
 
         $settings = app(AppSettingsService::class);
@@ -125,6 +129,7 @@ class SettingsLicenseAutoRefreshTest extends TestCase
             'resource_mode' => 'manual',
             'resource_cpu_threads' => 4,
             'resource_memory_budget_mb' => 2048,
+            'resource_gpu_vram_budget_mb' => 2048,
         ]);
 
         $response->assertRedirect('/settings');
@@ -133,6 +138,7 @@ class SettingsLicenseAutoRefreshTest extends TestCase
         $this->assertSame('manual', $settings->resourceProfile()['mode']);
         $this->assertSame(4, $settings->resourceProfile()['cpu_threads']);
         $this->assertSame(2048, $settings->resourceProfile()['memory_budget_mb']);
+        $this->assertSame(2048, $settings->resourceProfile()['gpu_vram_budget_mb']);
 
         Http::assertSent(function (Request $request): bool {
             return $request->url() === 'https://dilgaims.site/api/license/status'
@@ -192,10 +198,11 @@ class SettingsLicenseAutoRefreshTest extends TestCase
             'resource_mode' => 'manual',
             'resource_cpu_threads' => 9,
             'resource_memory_budget_mb' => 8193,
+            'resource_gpu_vram_budget_mb' => 4097,
         ]);
 
         $response
             ->assertRedirect('/settings')
-            ->assertSessionHasErrors(['resource_cpu_threads', 'resource_memory_budget_mb']);
+            ->assertSessionHasErrors(['resource_cpu_threads', 'resource_memory_budget_mb', 'resource_gpu_vram_budget_mb']);
     }
 }

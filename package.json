@@ -7,7 +7,7 @@
         "build:vad": "node scripts/run-php.mjs artisan app:build-vad-cli",
         "build:tauri": "node scripts/prepare-desktop.mjs",
         "build:tauri:empty": "node scripts/prepare-desktop.mjs empty",
-        "dev": "node scripts/dev-local.mjs",
+        "dev": "vite",
         "artisan": "node scripts/run-php.mjs artisan",
         "composer": "node scripts/run-php.mjs composer.phar",
         "dev:local": "node scripts/dev-local.mjs",

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Exceptions\SpeechToTextException;
+use App\Jobs\DiarizeUploadedAudioBatch;
 use App\Services\AppSettingsService;
 use App\Services\AudioFileChunkerService;
 use App\Services\ServiceUserMessage;
@@ -11,8 +12,8 @@ use App\Services\SpeechAudioFilterService;
 use App\Services\SpeechToTextService;
 use App\Services\UploadedAudioSectionPreparationService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Response;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -80,8 +81,7 @@ class AudioChunkController extends Controller
         AudioFileChunkerService $chunker,
         SpeechAudioFilterService $speechFilter,
         SpeakerDiarizationService $speakerDiarization,
-    ): JsonResponse
-    {
+    ): JsonResponse {
         if ($request->filled('upload_session_id')) {
             return $this->storeUploadedSection($request, $speechToText, $chunker, $speechFilter, $speakerDiarization);
         }
@@ -432,77 +432,6 @@ class AudioChunkController extends Controller
         return $process;
     }
 
-    private function diarizationBatchProcess(array $batch, string $speakerSessionId): Process
-    {
-        $payload = [
-            'speaker_session_id' => $speakerSessionId,
-            'clips' => array_values(array_map(
-                fn (array $item): array => [
-                    'audio_path' => $item['audio']['path'],
-                    'clip_index' => (int) $item['section']['clip_index'],
-                    'clip_start_ms' => (int) $item['section']['clip_start_ms'],
-                ],
-                $batch,
-            )),
-        ];
-        $encoded = base64_encode((string) json_encode($payload, JSON_UNESCAPED_SLASHES));
-        $phpBinary = is_file(base_path('php/php.exe'))
-            ? base_path('php/php.exe')
-            : PHP_BINARY;
-        $process = new Process([
-            $phpBinary,
-            base_path('artisan'),
-            'app:diarize-upload-batch',
-            '--payload='.$encoded,
-        ], base_path());
-        $process->setTimeout(null);
-
-        return $process;
-    }
-
-    /**
-     * @return array<string, array<int, array<string, mixed>>>|null
-     */
-    private function collectDiarizationBatch(?Process $process): ?array
-    {
-        if ($process === null) {
-            return [];
-        }
-
-        $process->wait();
-        $payload = json_decode(trim($process->getOutput()), true);
-
-        if (! $process->isSuccessful() || ! is_array($payload) || ($payload['ok'] ?? false) !== true) {
-            Log::warning('Async speaker diarization did not complete cleanly.', [
-                'message' => is_array($payload) ? ($payload['message'] ?? null) : null,
-                'error' => trim($process->getErrorOutput()),
-            ]);
-
-            return null;
-        }
-
-        $segments = [];
-
-        foreach (array_values(array_filter($payload['data'] ?? [], 'is_array')) as $queueIndex => $item) {
-            $clipSegments = array_values(array_filter($item['segments'] ?? [], 'is_array'));
-
-            if (isset($item['clip_index'])) {
-                $segments['clip:'.((int) $item['clip_index'])] = $clipSegments;
-            }
-
-            $segments['queue:'.$queueIndex] = $clipSegments;
-        }
-
-        return $segments;
-    }
-
-    private function stopDiarizationProcess(?Process $process): void
-    {
-        if ($process !== null && $process->isRunning()) {
-            $process->stop(0);
-        }
-    }
-
     public function storeBatch(
         Request $request,
         SpeechToTextService $speechToText,
@@ -517,7 +446,7 @@ class AudioChunkController extends Controller
             'user_id' => ['nullable', 'integer', 'min:1'],
             'category_name' => ['required', 'string', 'max:120'],
             'language_code' => ['nullable', 'string', 'max:32'],
-            'transcription_engine' => ['nullable', 'string', 'in:online,offline'],
+            'transcription_engine' => ['nullable', 'string', 'in:online'],
             'whisper_model' => ['nullable', 'string', 'in:tiny,small,medium,large,turbo'],
             'speaker_session_id' => ['nullable', 'string', 'max:120', 'regex:/^[A-Za-z0-9._:-]+$/'],
             'progress_id' => ['nullable', 'string', 'max:120', 'regex:/^[A-Za-z0-9._:-]+$/'],
@@ -551,7 +480,7 @@ class AudioChunkController extends Controller
         $cleanupFiles = [];
         $batch = [];
         $rows = [];
-        $diarizationProcess = null;
+        $queuedDiarizationChunkIds = [];
 
         try {
             foreach ($sections as $section) {
@@ -593,12 +522,7 @@ class AudioChunkController extends Controller
             }
 
             if ($batch !== []) {
-                $online = ($validated['transcription_engine'] ?? 'online') !== 'offline';
-                $diarizationProcess = $online && $speakerDiarization->canDiarize()
-                    ? $this->diarizationBatchProcess($batch, $speakerSessionId)
-                    : null;
-                $diarizationProcess?->start();
-
+                $queueOnlineDiarization = $speakerDiarization->canDiarize();
                 $transcriptions = $speechToText->transcribeBatch(array_map(
                     fn (array $item): array => [
                         'audio' => $item['audio']['path'],
@@ -614,25 +538,9 @@ class AudioChunkController extends Controller
                     ...(isset($validated['progress_id']) ? ['progress_id' => $validated['progress_id']] : []),
                     'release_worker' => $finalizeSession,
                 ]);
-                $diarizationSegments = $this->collectDiarizationBatch($diarizationProcess);
-
                 foreach ($batch as $batchIndex => $item) {
                     $section = $item['section'];
                     $transcription = $this->transcriptionForBatchClip($transcriptions, $section, $batchIndex);
-                    $diarizationOptions = [
-                        'clip_start_ms' => (int) $section['clip_start_ms'],
-                        'speaker_session_id' => $speakerSessionId,
-                    ];
-
-                    if ($online && is_array($diarizationSegments)) {
-                        $segments = $diarizationSegments['clip:'.((int) $section['clip_index'])]
-                            ?? $diarizationSegments['queue:'.$batchIndex]
-                            ?? [];
-                        $transcription = $speakerDiarization->mergeSegments($item['audio']['path'], $transcription, $segments, $diarizationOptions);
-                    } else {
-                        $transcription = $speakerDiarization->apply($item['audio']['path'], $transcription, $diarizationOptions);
-                    }
-
                     if ($this->isNoSpeechTranscript($transcription['text'] ?? '')) {
                         $rows[] = $this->skippedResponseData($section, 'upload', [
                             'prepared_duration_ms' => (int) $item['audio']['duration_ms'],
@@ -642,12 +550,21 @@ class AudioChunkController extends Controller
                         continue;
                     }
 
-                    $rows[] = $this->storeTranscribedAudio($section, $item['audio'], $transcription, $userId, $categoryName, 'upload');
+                    $row = $this->storeTranscribedAudio(
+                        $section,
+                        $item['audio'],
+                        $transcription,
+                        $userId,
+                        $categoryName,
+                        'upload',
+                        $queueOnlineDiarization ? 'diarization_queued' : 'transcribed',
+                    );
+                    $rows[] = $row;
+
+                    if ($queueOnlineDiarization) {
+                        $queuedDiarizationChunkIds[] = (int) $row['id'];
+                    }
                 }
-            } elseif ($finalizeSession) {
-                $speechToText->releaseOfflineWorker([
-                    'engine' => $validated['transcription_engine'] ?? 'online',
-                ]);
             }
         } catch (SpeechToTextException $exception) {
             Log::error('Uploaded audio batch transcription failed.', [
@@ -655,7 +572,6 @@ class AudioChunkController extends Controller
                 'section_count' => count($sections),
                 'language_code' => $validated['language_code'] ?? 'multi',
             ]);
-            $this->stopDiarizationProcess($diarizationProcess);
 
             return response()->json([
                 'message' => $exception->getMessage(),
@@ -665,7 +581,6 @@ class AudioChunkController extends Controller
                 'message' => $exception->getMessage(),
                 'section_count' => count($sections),
             ]);
-            $this->stopDiarizationProcess($diarizationProcess);
 
             return response()->json([
                 'message' => $exception->getMessage(),
@@ -676,7 +591,6 @@ class AudioChunkController extends Controller
                 'exception' => $exception::class,
                 'section_count' => count($sections),
             ]);
-            $this->stopDiarizationProcess($diarizationProcess);
 
             return response()->json([
                 'message' => ServiceUserMessage::audioPrepareFailed(),
@@ -690,7 +604,13 @@ class AudioChunkController extends Controller
             ...array_values(array_filter($cleanupFiles, 'is_array')),
         );
 
-        if ($finalizeSession) {
+        if ($queuedDiarizationChunkIds !== []) {
+            DiarizeUploadedAudioBatch::dispatch(
+                $queuedDiarizationChunkIds,
+                $speakerSessionId,
+                $finalizeSession,
+            );
+        } elseif ($finalizeSession) {
             $speakerDiarization->releaseSession($speakerSessionId);
         }
 
@@ -953,8 +873,7 @@ class AudioChunkController extends Controller
     public function releaseSpeakerSession(
         Request $request,
         SpeakerDiarizationService $speakerDiarization,
-    ): JsonResponse
-    {
+    ): JsonResponse {
         $validated = $request->validate([
             'speaker_session_id' => ['required', 'string', 'max:120', 'regex:/^[A-Za-z0-9._:-]+$/'],
         ]);
@@ -1050,6 +969,7 @@ class AudioChunkController extends Controller
         int $userId,
         string $categoryName,
         string $sourceType,
+        string $status = 'transcribed',
     ): array {
         $contents = file_get_contents($storedAudio['path']);
 
@@ -1071,12 +991,15 @@ class AudioChunkController extends Controller
             'audio_blob' => $contents,
             'translated_text' => $transcription['text'],
             'transcription_timestamps' => json_encode($transcription['timestamps']),
-            'status' => 'transcribed',
+            'status' => $status,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
 
-        return $this->audioChunkResponseData($audioChunkId, $validated, $storedAudio, $transcription, $userId, $categoryName, $sourceType);
+        return [
+            ...$this->audioChunkResponseData($audioChunkId, $validated, $storedAudio, $transcription, $userId, $categoryName, $sourceType),
+            'status' => $status,
+        ];
     }
 
     private function audioChunkResponseData(

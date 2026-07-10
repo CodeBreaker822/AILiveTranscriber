@@ -126,6 +126,7 @@ class AppSettingsServiceTest extends TestCase
             'services.resources.logical_processors' => 12,
             'services.resources.total_memory_mb' => 8192,
             'services.resources.available_memory_mb' => 6144,
+            'services.resources.gpu_available' => false,
         ]);
 
         $settings = app(AppSettingsService::class);
@@ -134,10 +135,16 @@ class AppSettingsServiceTest extends TestCase
             'mode' => 'auto',
             'cpu_threads' => 6,
             'memory_budget_mb' => 4096,
+            'gpu_available' => false,
+            'gpu_name' => '',
+            'gpu_vram_mb' => 0,
+            'gpu_vram_budget_mb' => 0,
             'auto_cpu_threads' => 6,
             'auto_memory_budget_mb' => 4096,
+            'auto_gpu_vram_budget_mb' => 0,
             'max_cpu_threads' => 12,
             'max_memory_budget_mb' => 8192,
+            'max_gpu_vram_budget_mb' => 0,
             'total_memory_mb' => 8192,
             'available_memory_mb' => 6144,
         ], $settings->resourceProfile());
@@ -148,13 +155,44 @@ class AppSettingsServiceTest extends TestCase
             'mode' => 'manual',
             'cpu_threads' => 3,
             'memory_budget_mb' => 2048,
+            'gpu_available' => false,
+            'gpu_name' => '',
+            'gpu_vram_mb' => 0,
+            'gpu_vram_budget_mb' => 0,
             'auto_cpu_threads' => 6,
             'auto_memory_budget_mb' => 4096,
+            'auto_gpu_vram_budget_mb' => 0,
             'max_cpu_threads' => 12,
             'max_memory_budget_mb' => 8192,
+            'max_gpu_vram_budget_mb' => 0,
             'total_memory_mb' => 8192,
             'available_memory_mb' => 6144,
         ], $settings->resourceProfile());
+    }
+
+    public function test_gpu_vram_budget_is_available_only_for_a_compatible_detected_gpu(): void
+    {
+        config([
+            'services.whisper.threads' => 6,
+            'services.whisper.memory_budget_mb' => 4096,
+            'services.whisper.gpu_vram_budget_mb' => 6144,
+            'services.resources.logical_processors' => 12,
+            'services.resources.total_memory_mb' => 16384,
+            'services.resources.gpu_available' => true,
+            'services.resources.gpu_name' => 'NVIDIA RTX Test',
+            'services.resources.gpu_vram_mb' => 8192,
+        ]);
+
+        $settings = app(AppSettingsService::class);
+        $settings->setResourceProfile('manual', 4, 4096, 99999);
+        $profile = $settings->resourceProfile();
+
+        $this->assertTrue($profile['gpu_available']);
+        $this->assertSame('NVIDIA RTX Test', $profile['gpu_name']);
+        $this->assertSame(8192, $profile['gpu_vram_mb']);
+        $this->assertSame(6144, $profile['auto_gpu_vram_budget_mb']);
+        $this->assertSame(8192, $profile['gpu_vram_budget_mb']);
+        $this->assertSame(8192, $profile['max_gpu_vram_budget_mb']);
     }
 
     public function test_manual_resource_profile_is_clamped_to_hardware_limits(): void

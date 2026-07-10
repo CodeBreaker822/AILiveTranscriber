@@ -10,11 +10,9 @@ class SpeechToTextService
     public function __construct(
         private readonly HostedTranscriptionApiService $api,
         private readonly OfflineWhisperService $offlineWhisper,
-    ) {
-    }
+    ) {}
 
     /**
-     * @param  UploadedFile|string|SplFileInfo  $audio
      * @return array{text: string, timestamps: array<int, array<string, mixed>>}
      */
     public function transcribe(UploadedFile|string|SplFileInfo $audio, array $options = []): array
@@ -32,30 +30,7 @@ class SpeechToTextService
      */
     public function transcribeBatch(array $clips, array $options = []): array
     {
-        if (($options['engine'] ?? 'online') !== 'offline') {
-            return $this->api->transcribeBatch($clips, $options);
-        }
-
-        $clips = array_values($clips);
-        $lastIndex = array_key_last($clips);
-
-        return array_map(function (array $clip, int $index) use ($options, $lastIndex): array {
-            $clipOptions = [
-                ...$options,
-                'clip_index' => $clip['clip_index'] ?? null,
-                'clip_start_ms' => $clip['clip_start_ms'] ?? null,
-                'clip_end_ms' => $clip['clip_end_ms'] ?? null,
-                'release_worker' => (bool) ($options['release_worker'] ?? false) && $index === $lastIndex,
-            ];
-            $transcription = $this->offlineWhisper->transcribe($clip['audio'], $clipOptions);
-
-            return [
-                ...$transcription,
-                'clip_index' => $clip['clip_index'] ?? null,
-                'clip_start_ms' => $clip['clip_start_ms'] ?? null,
-                'clip_end_ms' => $clip['clip_end_ms'] ?? null,
-            ];
-        }, array_values($clips), array_keys(array_values($clips)));
+        return $this->api->transcribeBatch($clips, $options);
     }
 
     public function releaseOfflineWorker(array $options = []): void

@@ -27,6 +27,8 @@ struct WorkerRequest {
     audio_path: Option<String>,
     language: Option<String>,
     threads: Option<usize>,
+    use_gpu: Option<bool>,
+    gpu_vram_budget_mb: Option<u64>,
     progress_id: Option<String>,
     release: Option<bool>,
 }
@@ -248,13 +250,14 @@ fn transcribe(
             .as_deref()
             .ok_or_else(|| "offline worker requires an audio path".to_string())?,
     );
+    let use_gpu = request.use_gpu.unwrap_or(false) && request.gpu_vram_budget_mb.unwrap_or(0) > 0;
 
     if engine
         .as_ref()
-        .map(|loaded| !loaded.uses_model(&model_path))
+        .map(|loaded| !loaded.uses_configuration(&model_path, use_gpu))
         .unwrap_or(true)
     {
-        *engine = Some(OfflineWhisperEngine::load(&model_path)?);
+        *engine = Some(OfflineWhisperEngine::load(&model_path, use_gpu)?);
     }
 
     let progress_id = request
@@ -264,28 +267,41 @@ fn transcribe(
         .filter(|value| !value.is_empty())
         .map(str::to_string);
     let cancellation = progress_id.as_deref().map(cancellation_flag);
-    let progress_callback = progress_id.clone().map(|progress_id| {
-        let progress = Arc::clone(progress);
+    let mut result = run_transcription(
+        engine
+            .as_ref()
+            .ok_or_else(|| "offline Whisper model is not loaded".to_string())?,
+        &audio_path,
+        request.language.as_deref(),
+        request.threads.unwrap_or(default_threads),
+        progress_id.as_deref(),
+        cancellation.as_ref(),
+        progress,
+    );
+    let gpu_failed = result.is_err()
+        && engine
+            .as_ref()
+            .map(OfflineWhisperEngine::gpu_enabled)
+            .unwrap_or(false)
+        && !cancellation
+            .as_ref()
+            .map(|flag| flag.load(Ordering::Acquire))
+            .unwrap_or(false);
 
-        Box::new(move |percent: i32| {
-            progress(progress_id.clone(), percent.clamp(0, 100));
-        }) as Box<dyn FnMut(i32)>
-    });
-    let abort_callback = cancellation.as_ref().map(|flag| {
-        let flag = Arc::clone(flag);
-
-        Box::new(move || flag.load(Ordering::Acquire)) as Box<dyn FnMut() -> bool>
-    });
-    let result = engine
-        .as_ref()
-        .ok_or_else(|| "offline Whisper model is not loaded".to_string())?
-        .transcribe(
+    if gpu_failed {
+        *engine = Some(OfflineWhisperEngine::load_cpu_fallback(&model_path)?);
+        result = run_transcription(
+            engine
+                .as_ref()
+                .ok_or_else(|| "offline Whisper CPU fallback is not loaded".to_string())?,
             &audio_path,
             request.language.as_deref(),
             request.threads.unwrap_or(default_threads),
-            progress_callback,
-            abort_callback,
+            progress_id.as_deref(),
+            cancellation.as_ref(),
+            progress,
         );
+    }
     let cancelled = cancellation
         .as_ref()
         .map(|flag| flag.load(Ordering::Acquire))
@@ -304,4 +320,36 @@ fn transcribe(
     } else {
         result
     }
+}
+
+fn run_transcription(
+    engine: &OfflineWhisperEngine,
+    audio_path: &Path,
+    language: Option<&str>,
+    threads: usize,
+    progress_id: Option<&str>,
+    cancellation: Option<&CancellationFlag>,
+    progress: &ProgressEmitter,
+) -> Result<crate::offline_whisper::OfflineTranscription, String> {
+    let progress_callback = progress_id.map(|progress_id| {
+        let progress_id = progress_id.to_string();
+        let progress = Arc::clone(progress);
+
+        Box::new(move |percent: i32| {
+            progress(progress_id.clone(), percent.clamp(0, 100));
+        }) as Box<dyn FnMut(i32)>
+    });
+    let abort_callback = cancellation.map(|flag| {
+        let flag = Arc::clone(flag);
+
+        Box::new(move || flag.load(Ordering::Acquire)) as Box<dyn FnMut() -> bool>
+    });
+
+    engine.transcribe(
+        audio_path,
+        language,
+        threads,
+        progress_callback,
+        abort_callback,
+    )
 }

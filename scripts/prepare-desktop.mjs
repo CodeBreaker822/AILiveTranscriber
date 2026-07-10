@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -39,6 +39,24 @@ function verifyBundledSherpaModels() {
     }
 }
 
+function prepareVulkanLoader() {
+    const sdk = String(process.env.VULKAN_SDK || '').trim();
+    const windowsDirectory = String(process.env.SystemRoot || process.env.WINDIR || '').trim();
+    const candidates = [
+        sdk ? path.join(sdk, 'Bin', 'vulkan-1.dll') : '',
+        windowsDirectory ? path.join(windowsDirectory, 'System32', 'vulkan-1.dll') : '',
+    ];
+    const source = candidates.find((candidate) => candidate && existsSync(candidate));
+
+    if (!source) {
+        return;
+    }
+
+    const destination = path.join(projectRoot, 'src-tauri', 'target', 'release', 'vulkan-1.dll');
+    mkdirSync(path.dirname(destination), { recursive: true });
+    copyFileSync(source, destination);
+}
+
 function run(command, args) {
     return new Promise((resolve, reject) => {
         const child = spawn(command, args, {
@@ -61,6 +79,7 @@ function run(command, args) {
 
 try {
     verifyBundledSherpaModels();
+    prepareVulkanLoader();
     rmSync(path.join(projectRoot, 'public', 'hot'), { force: true });
     await run(process.execPath, [runPhp, 'artisan', 'app:build-vad-cli']);
     await run(process.execPath, [

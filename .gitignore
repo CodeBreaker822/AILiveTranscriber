@@ -7,6 +7,7 @@
 .phpunit.result.cache
 /.codex
 /.cursor/
+/.git-broken/
 /.idea
 /.nova
 /.phpunit.cache

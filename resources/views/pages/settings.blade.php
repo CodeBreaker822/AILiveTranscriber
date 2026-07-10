@@ -121,15 +121,15 @@
                 <div class="rounded-lg border border-white/10 bg-white/[0.03] p-4">
                     <div class="flex flex-wrap items-start justify-between gap-4">
                         <div>
-                            <span class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">CPU and RAM usage</span>
-                            <p class="mt-1 text-sm leading-6 text-slate-400">Auto uses the hardware-based default. Manual overrides apply to upload preparation, offline Whisper, and Sherpa.</p>
+                            <span class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">CPU, RAM, and GPU usage</span>
+                            <p class="mt-1 text-sm leading-6 text-slate-400">{{ $resourceProfile['gpu_available'] ? $resourceProfile['gpu_name'].' is available for compatible Whisper models.' : 'No compatible Whisper GPU was detected. Offline transcription will use CPU.' }}</p>
                         </div>
                         <span class="rounded-lg border border-white/10 bg-slate-950/70 px-2.5 py-1 text-[0.68rem] uppercase tracking-[0.18em] text-slate-400">
-                            Auto: {{ $resourceProfile['auto_cpu_threads'] }} threads · {{ $resourceProfile['auto_memory_budget_mb'] }} MB
+                            Auto: {{ $resourceProfile['auto_cpu_threads'] }} threads · {{ $resourceProfile['auto_memory_budget_mb'] }} MB RAM@if ($resourceProfile['gpu_available']) · {{ $resourceProfile['auto_gpu_vram_budget_mb'] }} MB VRAM@endif
                         </span>
                     </div>
 
-                    <div class="mt-4 grid gap-3 md:grid-cols-3">
+                    <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                         <label class="block">
                             <span class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Mode</span>
                             <select name="resource_mode" data-resource-mode class="mt-2 w-full rounded-lg border border-white/10 bg-slate-950/80 px-3 py-2.5 text-sm text-white outline-none transition focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-300/20">
@@ -148,6 +148,23 @@
                             <span class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">RAM budget MB</span>
                             <input type="number" min="{{ $resourceProfile['max_memory_budget_mb'] > 0 ? 1 : 0 }}" max="{{ $resourceProfile['max_memory_budget_mb'] }}" name="resource_memory_budget_mb" data-resource-manual value="{{ old('resource_memory_budget_mb', $resourceProfile['memory_budget_mb']) }}" class="mt-2 w-full rounded-lg border border-white/10 bg-slate-950/80 px-3 py-2.5 text-sm text-white outline-none transition focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-300/20">
                             <span class="mt-1 block text-xs text-slate-500">Auto uses {{ $resourceProfile['auto_memory_budget_mb'] }} MB. Max is {{ $resourceProfile['max_memory_budget_mb'] }} MB.</span>
+                        </label>
+
+                        <label class="block">
+                            <span class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">GPU VRAM budget MB</span>
+                            <input
+                                type="number"
+                                min="0"
+                                max="{{ $resourceProfile['max_gpu_vram_budget_mb'] }}"
+                                name="resource_gpu_vram_budget_mb"
+                                data-resource-manual
+                                data-resource-gpu-manual
+                                data-gpu-available="{{ $resourceProfile['gpu_available'] ? 'true' : 'false' }}"
+                                value="{{ old('resource_gpu_vram_budget_mb', $resourceProfile['gpu_vram_budget_mb']) }}"
+                                @disabled(! $resourceProfile['gpu_available'] || old('resource_mode', $resourceProfile['mode']) !== 'manual')
+                                class="mt-2 w-full rounded-lg border border-white/10 bg-slate-950/80 px-3 py-2.5 text-sm text-white outline-none transition focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-300/20 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                            <span class="mt-1 block text-xs text-slate-500">{{ $resourceProfile['gpu_available'] ? 'Auto uses '.$resourceProfile['auto_gpu_vram_budget_mb'].' MB. Max is '.$resourceProfile['max_gpu_vram_budget_mb'].' MB.' : 'CPU fallback active.' }}</span>
                         </label>
                     </div>
                 </div>

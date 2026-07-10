@@ -26,6 +26,8 @@ export default defineConfig({
         },
         watch: {
             ignored: [
+                '**/.git/**',
+                '**/.git-broken/**',
                 '**/storage/framework/views/**',
                 '**/src-tauri/target/**',
             ],

@@ -41,6 +41,9 @@ class OfflineWhisperService
         }
 
         $threadBudget = max(1, (int) $resourceProfile['cpu_threads']);
+        $gpuVramBudgetMb = max(0, (int) $resourceProfile['gpu_vram_budget_mb']);
+        $useGpu = ($resourceProfile['gpu_available'] ?? false) === true
+            && $gpuVramBudgetMb >= $this->models->requiredGpuMemoryMb($model);
         $language = trim((string) ($options['language_code'] ?? 'auto'));
         $workerPayload = $this->workerRequest([
             'action' => 'transcribe',
@@ -48,6 +51,8 @@ class OfflineWhisperService
             'audio_path' => $audioPath,
             'language' => $language !== '' ? $language : 'auto',
             'threads' => $threadBudget,
+            'use_gpu' => $useGpu,
+            'gpu_vram_budget_mb' => $gpuVramBudgetMb,
             'progress_id' => trim((string) ($options['progress_id'] ?? '')) ?: null,
             'release' => (bool) ($options['release_worker'] ?? false),
         ]);
@@ -76,6 +81,7 @@ class OfflineWhisperService
             $language !== '' ? $language : 'auto',
             '--threads',
             (string) $threadBudget,
+            $useGpu ? '--gpu' : '--cpu',
             '--output',
             $outputPath,
         ], fn ($value): bool => $value !== null)));

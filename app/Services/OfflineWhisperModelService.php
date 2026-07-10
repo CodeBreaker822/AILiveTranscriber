@@ -19,6 +19,7 @@ class OfflineWhisperModelService
             'min_bytes' => 40000000,
             'sha1' => '19e8118f6652a650569f5a949d962154e01571d9',
             'runtime_memory_mb' => 512,
+            'gpu_memory_mb' => 512,
         ],
         'small' => [
             'label' => 'Small',
@@ -27,6 +28,7 @@ class OfflineWhisperModelService
             'min_bytes' => 240000000,
             'sha1' => 'bcad8a2083f4e53d648d586b7dbc0cd673d8afad',
             'runtime_memory_mb' => 1024,
+            'gpu_memory_mb' => 1024,
         ],
         'medium' => [
             'label' => 'Medium',
@@ -35,6 +37,7 @@ class OfflineWhisperModelService
             'min_bytes' => 750000000,
             'sha1' => 'e66645948aff4bebbec71b3485c576f3d63af5d6',
             'runtime_memory_mb' => 2304,
+            'gpu_memory_mb' => 2048,
         ],
         'large' => [
             'label' => 'Large v3',
@@ -43,6 +46,7 @@ class OfflineWhisperModelService
             'min_bytes' => 1000000000,
             'sha1' => 'e6e2ed78495d403bef4b7cff42ef4aaadcfea8de',
             'runtime_memory_mb' => 3584,
+            'gpu_memory_mb' => 3072,
         ],
         'turbo' => [
             'label' => 'Turbo',
@@ -51,6 +55,7 @@ class OfflineWhisperModelService
             'min_bytes' => 800000000,
             'sha1' => '01bf15bedffe9f39d65c1b6ff9b687ea91f59e0e',
             'runtime_memory_mb' => 2560,
+            'gpu_memory_mb' => 2560,
         ],
     ];
 
@@ -321,6 +326,11 @@ class OfflineWhisperModelService
         return (int) $this->model($model)['runtime_memory_mb'];
     }
 
+    public function requiredGpuMemoryMb(string $model): int
+    {
+        return (int) $this->model($model)['gpu_memory_mb'];
+    }
+
     public function supportsAvailableMemory(string $model): bool
     {
         $budget = (int) $this->settings->resourceProfile()['memory_budget_mb'];
@@ -350,6 +360,7 @@ class OfflineWhisperModelService
                 'installed' => $path !== null,
                 'size_bytes' => $path !== null ? (int) filesize($path) : 0,
                 'runtime_memory_mb' => $definition['runtime_memory_mb'],
+                'gpu_memory_mb' => $definition['gpu_memory_mb'],
                 'supported' => $this->supportsAvailableMemory($key),
             ];
         }

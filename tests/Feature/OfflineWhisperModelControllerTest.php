@@ -28,6 +28,34 @@ class OfflineWhisperModelControllerTest extends TestCase
             ->assertDontSee('data-app-update-minimize', false);
     }
 
+    public function test_header_renders_the_engine_switch_when_a_supported_model_is_installed(): void
+    {
+        $directory = storage_path('framework/testing/offline-whisper-header-'.uniqid());
+        $modelPath = $directory.'/ggml-tiny-q8_0.bin';
+        File::ensureDirectoryExists($directory);
+        File::put($modelPath, 'installed');
+        config([
+            'services.whisper.model_directory' => $directory,
+            'services.whisper.model_min_bytes' => 1,
+            'services.whisper.memory_budget_mb' => 600,
+        ]);
+
+        try {
+            $content = $this->get('/')->assertOk()->getContent();
+
+            $this->assertMatchesRegularExpression(
+                '/<button[^>]*data-offline-model-download[^>]*hidden[^>]*class="hidden/s',
+                $content,
+            );
+            $this->assertMatchesRegularExpression(
+                '/<div[^>]*data-transcription-engine-switch[^>]*class="flex/s',
+                $content,
+            );
+        } finally {
+            File::deleteDirectory($directory);
+        }
+    }
+
     public function test_status_reports_when_the_model_is_missing(): void
     {
         config([

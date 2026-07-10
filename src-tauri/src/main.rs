@@ -36,13 +36,22 @@ struct WhisperProgressEvent {
     percent: i32,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct ResourceProfile {
     logical_processors: usize,
     whisper_threads: usize,
     total_memory_mb: u64,
     available_memory_mb: u64,
     whisper_memory_budget_mb: u64,
+    gpu_available: bool,
+    gpu_name: String,
+    gpu_vram_mb: u64,
+    whisper_gpu_vram_budget_mb: u64,
+}
+
+struct GpuProfile {
+    name: String,
+    vram_mb: u64,
 }
 
 fn whisper_thread_budget(logical_processors: usize) -> usize {
@@ -70,6 +79,14 @@ fn whisper_memory_budget(total_memory_mb: u64) -> u64 {
     (total_memory_mb / 2).max(1)
 }
 
+fn whisper_gpu_vram_budget(total_vram_mb: u64) -> u64 {
+    if total_vram_mb < 512 {
+        return 0;
+    }
+
+    total_vram_mb.saturating_sub((total_vram_mb / 4).max(512))
+}
+
 fn resource_profile() -> ResourceProfile {
     let logical_processors = std::thread::available_parallelism()
         .map(|count| count.get())
@@ -78,6 +95,8 @@ fn resource_profile() -> ResourceProfile {
     let whisper_threads = whisper_thread_budget(logical_processors);
     let (total_memory_mb, available_memory_mb) = system_memory_mb().unwrap_or((0, 0));
     let whisper_memory_budget_mb = whisper_memory_budget(total_memory_mb);
+    let gpu = detect_whisper_gpu();
+    let gpu_vram_mb = gpu.as_ref().map(|profile| profile.vram_mb).unwrap_or(0);
 
     ResourceProfile {
         logical_processors,
@@ -85,7 +104,32 @@ fn resource_profile() -> ResourceProfile {
         total_memory_mb,
         available_memory_mb,
         whisper_memory_budget_mb,
+        gpu_available: gpu.is_some(),
+        gpu_name: gpu.map(|profile| profile.name).unwrap_or_default(),
+        gpu_vram_mb,
+        whisper_gpu_vram_budget_mb: whisper_gpu_vram_budget(gpu_vram_mb),
     }
+}
+
+#[cfg(feature = "vulkan")]
+fn detect_whisper_gpu() -> Option<GpuProfile> {
+    std::panic::catch_unwind(whisper_rs::vulkan::list_devices)
+        .ok()?
+        .into_iter()
+        .filter_map(|device| {
+            let vram_mb = (device.vram.total / 1_048_576) as u64;
+
+            (vram_mb >= 512).then(|| GpuProfile {
+                name: device.name,
+                vram_mb,
+            })
+        })
+        .max_by_key(|profile| profile.vram_mb)
+}
+
+#[cfg(not(feature = "vulkan"))]
+fn detect_whisper_gpu() -> Option<GpuProfile> {
+    None
 }
 
 fn system_memory_mb() -> Option<(u64, u64)> {
@@ -144,12 +188,14 @@ fn run_offline_whisper_cli() -> bool {
     let thread_budget = value_after("--threads")
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or_else(fallback_threads);
+    let use_gpu = arguments.iter().any(|argument| argument == "--gpu");
     let result = match (value_after("--model"), value_after("--audio")) {
         (Some(model), Some(audio)) => offline_whisper::transcribe(
             std::path::Path::new(model),
             std::path::Path::new(audio),
             value_after("--language"),
             thread_budget,
+            use_gpu,
         ),
         _ => Err("offline Whisper requires --model and --audio paths".to_string()),
     };
@@ -181,7 +227,10 @@ fn run_offline_whisper_cli() -> bool {
     true
 }
 
-struct LaravelServer(Mutex<Option<Child>>);
+struct LaravelProcesses {
+    server: Mutex<Option<Child>>,
+    queue_worker: Mutex<Option<Child>>,
+}
 
 struct LaravelPaths {
     project_dir: PathBuf,
@@ -302,7 +351,7 @@ fn reset_startup_log(paths: &LaravelPaths) -> Result<File, String> {
 
     writeln!(
         file,
-        "AITranscriber startup log\nProject: {}\nDatabase: {}\nStorage: {}\nCPU: {} logical processors; Whisper: {} threads\nMemory: {} MB total; {} MB available; Whisper budget: {} MB\n",
+        "AITranscriber startup log\nProject: {}\nDatabase: {}\nStorage: {}\nCPU: {} logical processors; Whisper: {} threads\nMemory: {} MB total; {} MB available; Whisper budget: {} MB\nGPU: {}; VRAM: {} MB; Whisper budget: {} MB\n",
         paths.project_dir.display(),
         paths.database_path.display(),
         paths.storage_path.display(),
@@ -311,6 +360,9 @@ fn reset_startup_log(paths: &LaravelPaths) -> Result<File, String> {
         paths.resources.total_memory_mb,
         paths.resources.available_memory_mb,
         paths.resources.whisper_memory_budget_mb,
+        if paths.resources.gpu_available { paths.resources.gpu_name.as_str() } else { "CPU fallback" },
+        paths.resources.gpu_vram_mb,
+        paths.resources.whisper_gpu_vram_budget_mb,
     )
     .map_err(|error| format!("failed to write startup log header: {error}"))?;
 
@@ -381,6 +433,23 @@ fn laravel_command(php_path: PathBuf, artisan_path: PathBuf, paths: &LaravelPath
         .env(
             "AI_TRANSCRIBER_AVAILABLE_MEMORY_MB",
             paths.resources.available_memory_mb.to_string(),
+        )
+        .env(
+            "AI_TRANSCRIBER_GPU_AVAILABLE",
+            if paths.resources.gpu_available {
+                "true"
+            } else {
+                "false"
+            },
+        )
+        .env("AI_TRANSCRIBER_GPU_NAME", &paths.resources.gpu_name)
+        .env(
+            "AI_TRANSCRIBER_GPU_VRAM_MB",
+            paths.resources.gpu_vram_mb.to_string(),
+        )
+        .env(
+            "AI_TRANSCRIBER_WHISPER_GPU_VRAM_BUDGET_MB",
+            paths.resources.whisper_gpu_vram_budget_mb.to_string(),
         )
         .env("WHISPER_MODEL_PATH", env_path(&whisper_model))
         .env(
@@ -639,12 +708,46 @@ fn start_laravel(app: &tauri::AppHandle) -> Result<(), String> {
 
     command.creation_flags(CREATE_NO_WINDOW);
 
-    let child = command
+    let server = command
         .spawn()
         .map_err(|error| format!("failed to start Laravel server: {error}"))?;
 
-    let state: State<LaravelServer> = app.state();
-    *state.0.lock().map_err(|error| error.to_string())? = Some(child);
+    let queue_stdout = startup_log_handle(&paths)?;
+    let queue_stderr = queue_stdout
+        .try_clone()
+        .map_err(|error| format!("failed to clone queue worker log handle: {error}"))?;
+    let mut queue_command = laravel_command(
+        paths.project_dir.join("php").join("php.exe"),
+        paths.project_dir.join("artisan"),
+        &paths,
+    );
+    queue_command
+        .arg("queue:work")
+        .arg("--tries=1")
+        .arg("--sleep=1")
+        .arg("--timeout=0")
+        .stdout(Stdio::from(queue_stdout))
+        .stderr(Stdio::from(queue_stderr));
+    queue_command.creation_flags(CREATE_NO_WINDOW);
+
+    let queue_worker = match queue_command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            let mut server = server;
+            let _ = server.kill();
+            let _ = server.wait();
+
+            return Err(format!("failed to start Laravel queue worker: {error}"));
+        }
+    };
+
+    let state: State<LaravelProcesses> = app.state();
+    *state.server.lock().map_err(|error| error.to_string())? = Some(server);
+    *state
+        .queue_worker
+        .lock()
+        .map_err(|error| error.to_string())? = Some(queue_worker);
+    append_startup_log(&paths, "Laravel queue worker started.");
 
     Ok(())
 }
@@ -713,19 +816,21 @@ fn wait_for_laravel(paths: &LaravelPaths) -> Result<(), String> {
 }
 
 fn stop_laravel(app: &tauri::AppHandle) {
-    let state: State<LaravelServer> = app.state();
+    let state: State<LaravelProcesses> = app.state();
 
-    let child_process = {
-        let Ok(mut guard) = state.0.lock() else {
-            return;
+    for process in [&state.queue_worker, &state.server] {
+        let child_process = {
+            let Ok(mut guard) = process.lock() else {
+                continue;
+            };
+
+            guard.take()
         };
 
-        guard.take()
-    };
-
-    if let Some(mut child) = child_process {
-        let _ = child.kill();
-        let _ = child.wait();
+        if let Some(mut child) = child_process {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 }
 
@@ -1103,7 +1208,10 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .manage(LaravelServer(Mutex::new(None)))
+        .manage(LaravelProcesses {
+            server: Mutex::new(None),
+            queue_worker: Mutex::new(None),
+        })
         .invoke_handler(tauri::generate_handler![
             open_external_url,
             save_text_export,

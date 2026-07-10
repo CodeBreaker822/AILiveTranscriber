@@ -586,6 +586,41 @@ $(function () {
             ];
         };
 
+        const monitorQueuedDiarization = (audioChunkIds, attemptsRemaining = 450) => {
+            const pendingIds = [...new Set(audioChunkIds.map((id) => Number(id)).filter((id) => id > 0))];
+
+            if (!storedUrl || !pendingIds.length || attemptsRemaining <= 0) {
+                return;
+            }
+
+            window.setTimeout(() => {
+                $.getJSON(storedUrl)
+                    .done((response) => {
+                        const items = Array.isArray(response?.data) ? response.data : [];
+                        const rowsById = new Map(items.map((item) => [Number(item?.id || 0), item]));
+                        const stillPending = [];
+
+                        pendingIds.forEach((id) => {
+                            const row = rowsById.get(id);
+
+                            if (!row || row.status === 'diarization_queued') {
+                                stillPending.push(id);
+                                return;
+                            }
+
+                            rememberStoredUploadItem(row);
+                        });
+
+                        if (stillPending.length) {
+                            monitorQueuedDiarization(stillPending, attemptsRemaining - 1);
+                        } else {
+                            renderTranscript();
+                        }
+                    })
+                    .fail(() => monitorQueuedDiarization(pendingIds, attemptsRemaining - 1));
+            }, 2000);
+        };
+
         const syncUploadCategoriesFromStoredItems = () => {
             uploadCategories = [...new Set(uploadStoredItems
                 .map((item) => String(item.categoryName || '').trim())
@@ -1512,6 +1547,7 @@ $(function () {
         const processUploadSections = async (sessionId, categoryName) => {
             cancelRequested = false;
             pauseRequested = false;
+            const queuedDiarizationIds = [];
 
             if (!audioChunkUrl) {
                 preparedSections = preparedSections.map((section) => ({
@@ -1552,6 +1588,9 @@ $(function () {
                         || {};
 
                     rememberStoredUploadItem(row);
+                    if (row.status === 'diarization_queued' && Number(row.id || 0) > 0) {
+                        queuedDiarizationIds.push(Number(row.id));
+                    }
                     preparedSections[index] = {
                         ...section,
                         status: 'Complete',
@@ -1571,7 +1610,7 @@ $(function () {
                 return true;
             };
 
-            if (audioChunkBatchUrl) {
+            if (audioChunkBatchUrl && getTranscriptionEngine() === 'online') {
                 let index = 0;
 
                 while (index < preparedSections.length) {
@@ -1774,6 +1813,7 @@ $(function () {
             uploadInFlight = false;
             syncUploadControls();
             if (!cancelRequested && !pausedWithWorkRemaining) {
+                monitorQueuedDiarization(queuedDiarizationIds);
                 rememberUploadCategory(categoryName);
                 loadUploadCategories();
                 resetUploadProgress('Complete');
@@ -2254,6 +2294,7 @@ $(function () {
         const $serverModelSelect = $('[data-server-model-select]');
         const $resourceMode = $('[data-resource-mode]');
         const $resourceManualInputs = $('[data-resource-manual]');
+        const $resourceGpuManualInputs = $('[data-resource-gpu-manual]');
         const syncSpeechProviderPanels = () => {
             const selectedProvider = String($speechProviderSelect.val() || 'elevenlabs');
 
@@ -2310,6 +2351,12 @@ $(function () {
         const syncResourceControls = () => {
             const manual = String($resourceMode.val() || 'auto') === 'manual';
             $resourceManualInputs.prop('disabled', !manual).toggleClass('opacity-60', !manual);
+            $resourceGpuManualInputs.each(function () {
+                const $input = $(this);
+                const enabled = manual && String($input.attr('data-gpu-available') || 'false') === 'true';
+
+                $input.prop('disabled', !enabled).toggleClass('opacity-60', !enabled);
+            });
         };
 
         $resourceMode.on('change', syncResourceControls);
