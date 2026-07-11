@@ -167,7 +167,7 @@ Supported export formats include:
 ## Related Repositories
 
 - ASTRA Desktop Application: https://github.com/CodeBreaker822/AILiveTranscriber
-- ASTRA Transcription Server: `<server repository URL>`
+- ASTRA Transcription Server: https://github.com/CodeBreaker822/ASTRA_Manager
 - Serverless Transcription Worker: https://github.com/CodeBreaker822/ServerlessRunpodTranscript
 
 ---
