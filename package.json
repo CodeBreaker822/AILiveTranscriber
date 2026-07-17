@@ -17,14 +17,18 @@
         "runtime:npm": "npm --version",
         "runtime:php": "node scripts/run-php.mjs --version",
         "diagnostic:real": "node scripts/real-workflow-diagnostic.mjs",
+        "test:updater": "node scripts/test-updater.mjs",
+        "tauri:update-test": "node scripts/test-updater.mjs",
+        "tauri:update": "powershell -ExecutionPolicy Bypass -File scripts/push-tauri-update.ps1",
         "clean:tauri": "node scripts/clean-tauri-cache.mjs",
         "tauri:dev": "tauri dev",
+        "tauri": "tauri",
         "tauri:build": "node scripts/build-desktop.mjs",
         "tauri:build:empty": "node scripts/build-desktop.mjs empty",
-        "tauri:package": "node scripts/create-update-package.mjs",
-        "build:package": "node scripts/create-update-package.mjs",
-        "tauri:package:empty": "node scripts/create-update-package.mjs empty",
-        "update:package": "node scripts/create-update-package.mjs"
+        "tauri:package": "node scripts/build-desktop.mjs",
+        "build:package": "node scripts/build-desktop.mjs",
+        "tauri:package:empty": "node scripts/build-desktop.mjs empty",
+        "update:package": "node scripts/build-desktop.mjs"
     },
     "devDependencies": {
         "@tailwindcss/vite": "^4.0.0",

@@ -16,12 +16,10 @@ $(function () {
     const $bar = $dialog.find('[data-app-update-progress-bar]');
     const $actions = $dialog.find('[data-app-update-actions]');
     const $retry = $dialog.find('[data-app-update-retry]');
-    const connectivityUrl = String(document.body.dataset.updateConnectivityUrl || '');
-    const statusUrl = String(document.body.dataset.updateStatusUrl || '');
-    const downloadUrl = String(document.body.dataset.updateDownloadUrl || '');
     const desktopDev = document.body.dataset.desktopDev === 'true';
     let updateStatus = null;
     let running = false;
+    let unlistenProgress = null;
 
     const setProgress = (value, label) => {
         const progress = Math.max(0, Math.min(100, Math.round(value)));
@@ -47,132 +45,91 @@ $(function () {
         running = false;
     };
 
-    const responseMessage = async (response, fallback) => {
-        try {
-            const payload = await response.json();
-            return String(payload?.message || fallback);
-        } catch (_error) {
-            return fallback;
-        }
-    };
-
-    const installDownloadedUpdate = async (archivePath) => {
-        const invoke = window.__TAURI__?.core?.invoke;
-
-        setProgress(100, 'Installing');
-        $title.text('Restarting AITranscriber');
-        $message.text('The update is downloaded. AITranscriber will close, install it, and reopen.');
-
-        if (typeof invoke !== 'function') {
-            $message.text('The update was downloaded locally. Open the desktop application to install it.');
+    const cleanupProgressListener = async () => {
+        if (typeof unlistenProgress !== 'function') {
             return;
         }
 
-        await invoke('install_update', { archivePath });
+        const release = unlistenProgress;
+        unlistenProgress = null;
+
+        try {
+            release();
+        } catch (_error) {
+            // The app may already be closing for installation.
+        }
+    };
+
+    const listenForProgress = async () => {
+        await cleanupProgressListener();
+
+        const listen = window.__TAURI__?.event?.listen;
+
+        if (typeof listen !== 'function') {
+            return;
+        }
+
+        unlistenProgress = await listen('app-update-progress', (event) => {
+            const payload = event?.payload || {};
+            const status = String(payload.status || '');
+            const percent = Number(payload.percent || 0);
+
+            if (status === 'downloaded') {
+                setProgress(100, 'Installing');
+                $title.text('Restarting AITranscriber');
+                $message.text('The update is verified. AITranscriber will close, install it, and reopen.');
+                return;
+            }
+
+            if (percent > 0) {
+                setProgress(percent, 'Downloading');
+                return;
+            }
+
+            const downloaded = Number(payload.downloaded || 0);
+            const progress = Math.min(92, Math.max(4, Math.round(downloaded / 1024 / 1024)));
+            setProgress(progress, 'Downloading');
+        });
     };
 
     const downloadUpdate = async () => {
-        if (running || !downloadUrl) {
+        const invoke = window.__TAURI__?.core?.invoke;
+
+        if (running || typeof invoke !== 'function') {
             return;
         }
 
         running = true;
         $actions.addClass('hidden').removeClass('flex');
         $title.text('Updating');
-        $message.text(`Downloading AITranscriber ${updateStatus.version}…`);
+        $message.text(`Downloading AITranscriber ${updateStatus.version}...`);
         setProgress(0, 'Connecting');
 
         try {
-            const statusDownloadUrl = String(updateStatus?.download_url || updateStatus?.downloadUrl || '');
-            const requestUrl = new URL(downloadUrl, window.location.href);
-
-            if (statusDownloadUrl) {
-                requestUrl.searchParams.set('url', statusDownloadUrl);
-            }
-
-            const response = await fetch(requestUrl.toString(), {
-                method: 'GET',
-                cache: 'no-store',
-                headers: { Accept: 'application/zip' },
-            });
-
-            if (!response.ok || !response.body) {
-                throw new Error(await responseMessage(response, 'The update ZIP could not be downloaded.'));
-            }
-
-            const archivePath = String(response.headers.get('X-Update-Archive-Path') || '');
-            const total = Number(response.headers.get('Content-Length') || 0);
-            const reader = response.body.getReader();
-            let received = 0;
-            let indeterminateProgress = 4;
-
-            while (true) {
-                const { done, value } = await reader.read();
-
-                if (done) {
-                    break;
-                }
-
-                received += value?.byteLength || 0;
-
-                if (total > 0) {
-                    setProgress((received / total) * 100, 'Downloading');
-                } else {
-                    indeterminateProgress = Math.min(92, indeterminateProgress + 2);
-                    setProgress(indeterminateProgress, 'Downloading');
-                }
-            }
-
-            if (!archivePath) {
-                throw new Error('The local update archive path was not returned.');
-            }
-
-            await installDownloadedUpdate(archivePath);
+            await listenForProgress();
+            await invoke('install_update');
         } catch (error) {
+            await cleanupProgressListener();
             showError(error);
         }
     };
 
     const checkForUpdate = async () => {
-        if (!connectivityUrl || !statusUrl || !downloadUrl || navigator.onLine === false) {
+        const invoke = window.__TAURI__?.core?.invoke;
+
+        if (typeof invoke !== 'function' || navigator.onLine === false) {
             return;
         }
 
         try {
-            const connectivityResponse = await fetch(connectivityUrl, {
-                method: 'GET',
-                cache: 'no-store',
-                headers: { Accept: 'application/json' },
-            });
-
-            if (!connectivityResponse.ok) {
-                return;
-            }
-
-            const connectivity = await connectivityResponse.json();
-
-            if (connectivity?.online !== true) {
-                return;
-            }
-
-            const response = await fetch(statusUrl, {
-                method: 'GET',
-                cache: 'no-store',
-                headers: { Accept: 'application/json' },
-            });
-
-            if (!response.ok) {
-                return;
-            }
-
-            const payload = await response.json();
+            const payload = await invoke('check_app_update');
 
             if (!payload?.available || !String(payload.version || '').trim()) {
                 return;
             }
 
             updateStatus = payload;
-            const notes = String(payload.notes || '').trim();
+            const notes = String(payload.notes || payload.body || '').trim();
 
             if (notes) {
                 $notes.text(notes).removeClass('hidden');
@@ -181,7 +138,7 @@ $(function () {
             showModal();
             await downloadUpdate();
         } catch (_error) {
-            // A background check should not interrupt transcription when the server is unavailable.
+            // A background update check should not interrupt transcription.
         }
     };
 

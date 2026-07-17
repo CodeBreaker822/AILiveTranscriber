@@ -1,16 +1,31 @@
+param(
+    [switch] $Quiet
+)
+
 <#
-Run this in PowerShell from the repository root to prepend the repo root
-to the current session PATH so you can call `npm.local` and `php.local`
-without using `.
+Prepend this repository root to the current PowerShell session PATH so the
+repo-local shims can be called without `.\`.
+
+For one session:
+    .\enable-local-tools.ps1
+
+For every new PowerShell session, dot-source this file from $PROFILE:
+    . "D:\Transcriber Project\AITranscriber\enable-local-tools.ps1" -Quiet
 #>
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+$scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Definition }
 if (-not $scriptDir) { $scriptDir = (Get-Location).Path }
 
 if (-not (Test-Path $scriptDir)) {
     Write-Error "Repository directory not found: $scriptDir"
-    exit 1
+    return
 }
 
-$env:PATH = "$scriptDir;$env:PATH"
-Write-Host "Local tools enabled for this session. Repo root added to PATH: $scriptDir"
-Write-Host "You can now run: npm.local run tauri:build (no .\ required)"
+$currentPath = @($env:PATH -split ';' | Where-Object { $_ })
+if ($currentPath -notcontains $scriptDir) {
+    $env:PATH = "$scriptDir;$env:PATH"
+}
+
+if (-not $Quiet) {
+    Write-Host "Local tools enabled for this session. Repo root is on PATH: $scriptDir"
+    Write-Host "You can now run: npm.local run tauri:build (no .\ required)"
+}

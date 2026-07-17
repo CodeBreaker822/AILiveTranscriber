@@ -36,9 +36,7 @@ Defined in `routes/web.php`.
 | GET | `/settings` | `settings.edit` | `SettingsController@edit` | Settings page for server URL, license key, provider/model selection, and memory cleanup. |
 | POST | `/settings` | `settings.update` | `SettingsController@update` | Saves server URL/license key, checks license capabilities, and saves the selected speech-to-text provider/model. |
 | GET | `/settings/api-key-help` | `settings.api-key-help` | `SettingsController@help` | Explains how to use the AITranscriber license key. |
-| GET | `/app-update/connectivity` | `app-update.connectivity` | `AppUpdateController@connectivity` | Quietly checks hosted-server reachability before any update status request. |
-| GET | `/app-update/status` | `app-update.status` | `AppUpdateController@status` | Compares the bundled local version text with the version returned by the hosted license status endpoint. |
-| GET | `/app-update/download` | `app-update.download` | `AppUpdateController@download` | Authenticates, streams, and stages the hosted update ZIP for desktop installation. |
+| GET | `/app-update/connectivity` | `app-update.connectivity` | `AppUpdateController@connectivity` | Quietly checks hosted-server reachability for online/offline transcription availability. |
 | GET | `/offline-model/status` | `offline-model.status` | `OfflineWhisperModelController@status` | Reports whether the local Q8 Whisper model is installed. |
 | POST | `/offline-model/download` | `offline-model.download` | `OfflineWhisperModelController@download` | Separately downloads, verifies, and installs the offline Whisper model. |
 | POST | `/settings/audio-memory/temporary` | `settings.audio-memory.temporary.clear` | `AudioMemoryController@clearTemporary` | Deletes temporary uploaded source files and generated section files from private storage. |
@@ -154,13 +152,12 @@ The settings page no longer stores direct ElevenLabs, Deepgram, Speechmatics, or
 
 ### `AppUpdateController`
 
-Provides the local endpoints used by the shared header update checker.
+Provides the local connectivity probe used by the shared transcription engine
+availability checks.
 
-- `status()`: refreshes hosted license status and compares its `version` text exactly with the bundled local `version.json`.
 - `connectivity()`: performs a short, unauthenticated reachability probe. Offline failures return only `online: false` and do not display errors.
-- `download()`: streams `/transcribe/update/zipfile` through the authenticated hosted API client, writes the ZIP to private app storage, and returns download progress to the browser.
-- The shared `modals.app-update` dialog starts automatically on Live, Upload, and Settings when the version text differs.
-- On Windows, the Tauri `install_update` command closes the local PHP server and app, extracts the ZIP through an external PowerShell process, and restarts AITranscriber.
+- Application updates are handled by Tauri's signed updater plugin. The shared `modals.app-update` dialog starts automatically on Live, Upload, and Settings when Tauri reports an available update.
+- On Windows, the Tauri `install_update` command downloads the signed updater artifact, verifies its signature, closes the local PHP server, installs through Tauri's updater, and restarts AITranscriber.
 
 ### `AudioMemoryController`
 
@@ -652,7 +649,7 @@ The roughly 42 MiB of verified Sherpa segmentation and speaker-embedding weights
 
 Whisper weights remain optional because they are much larger. The shared `Download Offline` modal lists the available Whisper choices and tracks download, checksum verification, and installation. It can be minimized into a compact bottom-right progress dock without stopping the download. Verified Whisper models are saved under writable private app storage.
 
-This model installer is independent of application update checking and update ZIP installation. It uses `/offline-model/*`; the updater continues to use `/app-update/*`. The application-update modal is intentionally not minimizable because interacting with the app while its executable and resources are being replaced could leave the installation inconsistent.
+This model installer is independent of application update checking and signed Tauri updater installation. It uses `/offline-model/*`; the application updater is driven by Tauri's native updater commands. The application-update modal is intentionally not minimizable because interacting with the app while its executable and resources are being replaced could leave the installation inconsistent.
 
 Offline model connection failures log the requested URL, CA bundle path/status, complete exception chain, and available HTTP handler context to the Laravel log. HTTP error responses also record their status and response body. The installer shows only a safe retry message; DNS, TLS, proxy, timeout, provider, and internal errors are never exposed in the UI.
 
@@ -666,7 +663,7 @@ For local development, the PowerShell helper remains available:
 powershell -ExecutionPolicy Bypass -File scripts/download-whisper-model.ps1
 ```
 
-The script downloads the official whisper.cpp `ggml-large-v3-turbo-q8_0.bin` model (about 874 MB), verifies its published SHA-1, and places it under `storage/app/private/whisper/models/`. Whisper weights are never included in the NSIS installer or update ZIP; every installed app downloads them separately into writable app-data storage when the user chooses `Download Offline`.
+The script downloads the official whisper.cpp `ggml-large-v3-turbo-q8_0.bin` model (about 874 MB), verifies its published SHA-1, and places it under `storage/app/private/whisper/models/`. Whisper weights are never included in the NSIS installer or signed updater artifact; every installed app downloads them separately into writable app-data storage when the user chooses `Download Offline`.
 
 The upload and live pages probe `/app-update/connectivity` every 30 seconds. Online is the default and is labeled as faster. If the hosted API becomes unreachable and the local model is installed, the selector changes to Offline automatically. When connectivity returns, the last explicit user preference is restored. Unavailable choices are disabled.
 
@@ -710,34 +707,58 @@ The installer is written under:
 src-tauri\target\release\bundle\nsis\
 ```
 
-Installer builds and server update packages are separate operations. `tauri:build`
-creates the NSIS installer only. To create a server-delivered update ZIP from the
-existing `src-tauri/target/release` layout without building another installer, run:
+`tauri:build` creates the NSIS installer and official signed Tauri updater
+artifacts for local verification. The updater public key is stored in
+`src-tauri/tauri.conf.json`; keep the private signing key outside the repository
+and set `TAURI_SIGNING_PRIVATE_KEY_PATH` when building releasable updates
+locally:
 
 ```powershell
-.\node\npm.cmd run tauri:package
+.\node\npm.cmd run tauri:build
 ```
 
-The packager asks where to save the ZIP. Press Enter to use
-`src-tauri/target/release/bundle/updates`, or set
-`AITRANSCRIBER_UPDATE_OUTPUT_DIR` for non-interactive packaging. The ZIP contains
-the desktop executable, Laravel application code, compiled frontend assets,
-Composer dependencies, VAD, bundled Sherpa models, and the platform runtimes needed by that build.
-The packager also asks for release notes and creates or replaces `version.json`
-beside the ZIP with the build version and notes. Automated builds can provide
-the notes through `AITRANSCRIBER_UPDATE_NOTES`.
+Production releases are automated by `.github/workflows/release.yml`. Add these
+repository secrets once in GitHub:
 
-Upload the generated ZIP and `version.json` to the hosted server backing
-`GET /api/transcribe/update/zipfile` and the license-status version metadata.
+- `TAURI_SIGNING_PRIVATE_KEY`: the contents of `C:\Users\jerve\.tauri\aitranscriber-updater.key`.
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: only if the updater key was generated with a password.
 
-Update ZIPs never contain `.env`, `database/database.sqlite`, or `storage`.
+To test the updater configuration:
+
+```powershell
+.\node\npm.cmd run tauri:update-test
+```
+
+Developer commits stay on the private `AILiveTranscriber` repository:
+
+```powershell
+git add .
+git commit -m "Your message"
+git push origin main
+```
+
+Client updater releases are pushed separately to the public
+`CodeBreaker822/AITranscriberAPP` repository:
+
+```powershell
+.\node\npm.cmd run tauri:update
+```
+
+`tauri:update` does not create local git tags. It pushes the current committed
+`HEAD` to the public updater repository. GitHub Actions there builds the Windows
+installer, signs the updater artifact, creates the GitHub release from the app
+version in `src-tauri/tauri.conf.json`, and uploads `latest.json` to the endpoint configured as
+`https://github.com/CodeBreaker822/AITranscriberAPP/releases/latest/download/latest.json`.
+That static JSON file includes the SemVer `version`, notes, and the Windows
+platform entry with the artifact `url` and `signature`.
+
+Tauri updater artifacts must never contain `.env`, `database/database.sqlite`, or `storage`.
 Downloaded Whisper models remain in writable app-data storage and are preserved
 across application updates. Sherpa models are replaced by the verified copies in
 each update package.
-The updater must stop AITranscriber before extracting the ZIP over the Windows
-installation directory, then restart it. On startup, Laravel runs included
-database migrations against the existing database stored in the user's app-data
-directory.
+The updater stops AITranscriber before installation, then restarts it. On
+startup, Laravel runs included database migrations against the existing database
+stored in the user's app-data directory.
 
 Use `.\node\npm.cmd run tauri:build:empty` when the installer must contain a
 fresh migrated database without default license settings or user data. The normal
@@ -768,15 +789,15 @@ Equivalent direct Windows commands remain available:
 `tauri:build` packages the prepared default database and built VAD CLI.
 `tauri:build:empty` creates and packages a fresh migrated database with no
 license settings, transcript rows, audio rows, or other user data.
-`tauri:package` creates only the standard update ZIP and server `version.json`;
-`tauri:package:empty` applies the `empty` update filename/manifest label. Neither
-package command invokes Tauri or creates an installer.
+`tauri:package` is an alias for the official Tauri release build, which creates
+the installer and signed updater artifacts. `tauri:package:empty` runs the same
+official build path with the empty database snapshot.
 
 Rust dependency debug symbols and incremental compilation are disabled to keep
 the Tauri target directory manageable. Successful `tauri:build` commands prune
 release-only compilation caches after the executable and bundles are complete.
 Run `npm run clean:tauri` to remove development and release compilation caches
-manually; it preserves executables, installers, update ZIPs, packaged resources,
+manually; it preserves executables, installers, updater artifacts, packaged resources,
 models, databases, and storage. The next development compilation will take longer.
 
 Required hosted API configuration:

@@ -155,19 +155,18 @@ Notes:
 - `apis.polish.allowed` must be `true` before sending transcript text to Gemini.
 - The `languages` array in the response is the complete selectable language list for that provider model.
 
-## Download Desktop Update
+## Desktop Updates
 
 ```http
-GET /api/transcribe/update/zipfile
-Authorization: Bearer LICENSE_KEY
-Accept: application/zip
+GET /api/transcribe/update/{{target}}/{{arch}}/{{current_version}}
+Accept: application/json
 ```
 
-The response is the ZIP advertised by `version` and `notes` in the license status
-response. The desktop app compares the version text exactly with its bundled
-`version.json`, downloads the ZIP when they differ, and installs it after stopping
-the running application. The ZIP must not contain `.env`, `storage`, or
-`database/database.sqlite`.
+The response must use Tauri's signed updater JSON format and include a SemVer
+`version`, release notes in `notes` or `body`, the updater artifact `url`, and
+its Tauri `signature`. The desktop app uses Tauri's official updater to compare,
+download, verify, install, stop the running app, and restart. Updater artifacts
+must not contain `.env`, `storage`, or `database/database.sqlite`.
 
 ## Transcribe Audio
 

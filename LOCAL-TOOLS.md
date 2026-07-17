@@ -24,6 +24,20 @@ npm.local run tauri:build
 php.local --version
 ```
 
+Enable automatically
+- Add the repository root to your Windows User `PATH` to enable the local shims in every new PowerShell or CMD session:
+
+```powershell
+$repo = 'D:\Transcriber Project\AITranscriber'
+$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+$entries = @($userPath -split ';' | Where-Object { $_ })
+if ($entries -notcontains $repo) {
+    [Environment]::SetEnvironmentVariable('Path', (@($repo) + $entries) -join ';', 'User')
+}
+```
+
+This avoids PowerShell execution-policy issues because no profile script has to run. Open a new terminal after changing User `PATH`.
+
 Composer
 - This repo includes `composer.phar`. Use the provided shim:
 

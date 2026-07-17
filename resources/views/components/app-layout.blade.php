@@ -104,8 +104,6 @@
         data-desktop-dev="{{ config('app.desktop_dev') ? 'true' : 'false' }}"
         data-speech-provider="{{ $speechProvider }}"
         data-update-connectivity-url="{{ route('app-update.connectivity') }}"
-        data-update-status-url="{{ route('app-update.status') }}"
-        data-update-download-url="{{ route('app-update.download') }}"
         data-offline-model-status-url="{{ route('offline-model.status') }}"
         data-offline-model-download-url="{{ route('offline-model.download') }}"
         data-speaker-session-release-url="{{ route('speaker-sessions.release') }}"

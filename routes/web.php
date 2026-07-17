@@ -24,8 +24,6 @@ Route::get('/settings', [SettingsController::class, 'edit'])->name('settings.edi
 Route::post('/settings', [SettingsController::class, 'update'])->name('settings.update');
 Route::get('/settings/api-key-help', [SettingsController::class, 'help'])->name('settings.api-key-help');
 Route::get('/app-update/connectivity', [AppUpdateController::class, 'connectivity'])->name('app-update.connectivity');
-Route::get('/app-update/status', [AppUpdateController::class, 'status'])->name('app-update.status');
-Route::get('/app-update/download', [AppUpdateController::class, 'download'])->name('app-update.download');
 Route::get('/offline-model/status', [OfflineWhisperModelController::class, 'status'])->name('offline-model.status');
 Route::post('/offline-model/download', [OfflineWhisperModelController::class, 'download'])->name('offline-model.download');
 Route::post('/settings/audio-memory/temporary', [AudioMemoryController::class, 'clearTemporary'])->name('settings.audio-memory.temporary.clear');

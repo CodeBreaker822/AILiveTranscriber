@@ -156,13 +156,49 @@ Supported export formats include:
 8. Polish or summarize online transcripts when needed.
 9. Export the final transcript.
 
-## Requirements And Notes
+## Minimum Requirements
+
+ASTRA is a Windows-first desktop app. The packaged installer includes the local runtime pieces the app expects, including the PHP runtime, Laravel app files, FFmpeg tools, frontend assets, and bundled local processing helpers. Users should not need to install PHP, Node.js, Composer, Laravel, or queue tools separately.
+
+Recommended minimum PC:
+
+- Windows 10 or Windows 11, 64-bit.
+- 4 logical CPU processors or more.
+- 8 GB RAM for online transcription workflows.
+- 16 GB RAM recommended for offline Whisper, long uploads, or speaker diarization.
+- Enough free disk space for the app, temporary audio chunks, logs, local database, and optional offline models.
+- Internet access for online transcription, polish, summary, license checks, and updates.
+
+Offline and local model notes:
 
 - Offline transcription requires a supported installed Whisper model.
 - Speaker diarization requires the Sherpa diarization model.
-- Online transcription requires the configured transcription server and provider access.
+- Offline transcription and diarization are CPU and memory heavy; slower machines may still run, but processing will be slower.
 - Polish and summarize are currently online-only.
-- The app is Windows-first and packages its required local runtime pieces with the desktop build.
+
+## Background Workers
+
+The desktop app starts a local Laravel backend and three queue workers automatically when the packaged app opens:
+
+| Queue | Purpose |
+| --- | --- |
+| `audio` | Upload preparation, section processing, transcription storage, and audio-heavy jobs. |
+| `transcripts` | Transcript polish and summary jobs. |
+| `default` | General Laravel queue work and fallback jobs. |
+
+These workers are local child processes owned by the desktop app. They are stopped when the app closes. The user does not need to start them manually in the installed app.
+
+The app is designed around these separate workers so long audio work does not block transcript polish, summary, export dialogs, or other backend actions.
+
+### Can The App Run With Only One Worker?
+
+Only partly.
+
+If there is only one worker and it listens only to `default`, then `audio` and `transcripts` jobs will not run. Upload processing, polishing, and summarizing can appear stuck because their queue jobs are never consumed.
+
+If there is one worker configured to listen to all queues, for example `audio,transcripts,default`, the jobs can run, but only one job runs at a time. That brings back the old behavior where a long audio or diarization job can delay polish, summary, retry, cancel feedback, and other backend work.
+
+For the packaged app, the supported setup is three workers: one for `audio`, one for `transcripts`, and one for `default`.
 
 ## Related Repositories
 

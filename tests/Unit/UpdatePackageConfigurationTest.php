@@ -6,21 +6,22 @@ use PHPUnit\Framework\TestCase;
 
 class UpdatePackageConfigurationTest extends TestCase
 {
-    public function test_tauri_package_only_runs_the_update_zip_packager(): void
+    public function test_tauri_package_uses_official_updater_artifact_build(): void
     {
         $package = json_decode(file_get_contents(dirname(__DIR__, 2).'/package.json'), true);
 
         $this->assertSame(
-            'node scripts/create-update-package.mjs',
+            'node scripts/build-desktop.mjs',
             $package['scripts']['tauri:package'] ?? null,
         );
         $this->assertSame(
-            'node scripts/create-update-package.mjs empty',
+            'node scripts/build-desktop.mjs empty',
             $package['scripts']['tauri:package:empty'] ?? null,
         );
 
         $desktopBuilder = file_get_contents(dirname(__DIR__, 2).'/scripts/build-desktop.mjs');
         $this->assertStringNotContainsString('create-update-package', $desktopBuilder);
+        $this->assertStringContainsString('tauri.release.conf.json', $desktopBuilder);
     }
 
     public function test_update_payload_excludes_whisper_and_records_the_server_api_path(): void
@@ -70,18 +71,29 @@ class UpdatePackageConfigurationTest extends TestCase
         $this->assertArrayNotHasKey('target/release/vulkan-1.dll', $resources);
     }
 
-    public function test_windows_updater_uses_a_writable_current_user_install_and_preflights_permissions(): void
+    public function test_tauri_official_updater_is_configured_for_signed_windows_updates(): void
     {
+        $tauriConfig = json_decode(
+            file_get_contents(dirname(__DIR__, 2).'/src-tauri/tauri.conf.json'),
+            true,
+        );
         $windowsConfig = json_decode(
             file_get_contents(dirname(__DIR__, 2).'/src-tauri/tauri.windows.conf.json'),
             true,
         );
         $rust = file_get_contents(dirname(__DIR__, 2).'/src-tauri/src/main.rs');
 
+        $this->assertSame('1.0.0', $tauriConfig['version']);
+        $this->assertTrue($tauriConfig['bundle']['createUpdaterArtifacts'] ?? false);
+        $this->assertNotEmpty(data_get($tauriConfig, 'plugins.updater.pubkey'));
+        $this->assertSame(
+            ['https://github.com/CodeBreaker822/AITranscriberAPP/releases/latest/download/latest.json'],
+            data_get($tauriConfig, 'plugins.updater.endpoints'),
+        );
+        $this->assertSame('passive', data_get($tauriConfig, 'plugins.updater.windows.installMode'));
         $this->assertSame('currentUser', data_get($windowsConfig, 'bundle.windows.nsis.installMode'));
-        $this->assertStringContainsString('.aitranscriber-update-write-test-', $rust);
-        $this->assertStringContainsString('child.wait()', $rust);
-        $this->assertStringContainsString('install-update.log', $rust);
+        $this->assertStringContainsString('tauri_plugin_updater::Builder::new().build()', $rust);
+        $this->assertStringContainsString('tauri_plugin_updater::{Update, UpdaterExt}', $rust);
     }
 
     public function test_bundled_php_certificate_paths_are_portable(): void
@@ -97,21 +109,26 @@ class UpdatePackageConfigurationTest extends TestCase
     {
         $script = file_get_contents(dirname(__DIR__, 2).'/public/js/modals/app-update.js');
 
+        $this->assertStringContainsString("await invoke('check_app_update');", $script);
         $this->assertStringContainsString("if (!payload?.available || !String(payload.version || '').trim())", $script);
-        $this->assertStringContainsString("statusDownloadUrl", $script);
-        $this->assertStringContainsString("requestUrl.searchParams.set('url', statusDownloadUrl)", $script);
+        $this->assertStringContainsString("listen('app-update-progress'", $script);
         $this->assertStringContainsString('await downloadUpdate();', $script);
-        $this->assertStringContainsString("await invoke('install_update', { archivePath });", $script);
+        $this->assertStringContainsString("await invoke('install_update');", $script);
         $this->assertStringContainsString('checkForUpdate();', $script);
+        $this->assertStringNotContainsString('data.updateDownloadUrl', $script);
+        $this->assertStringNotContainsString('/app-update/download', $script);
     }
 
-    public function test_native_updater_waits_for_downloaded_zip_before_installing(): void
+    public function test_native_updater_downloads_signed_artifact_before_installing(): void
     {
         $rust = file_get_contents(dirname(__DIR__, 2).'/src-tauri/src/main.rs');
 
-        $this->assertStringContainsString('fn wait_for_update_archive', $rust);
-        $this->assertStringContainsString('Duration::from_secs(8)', $rust);
-        $this->assertStringContainsString('let archive = wait_for_update_archive(PathBuf::from(archive_path))?', $rust);
+        $this->assertStringContainsString('.check()', $rust);
+        $this->assertStringContainsString('.download(', $rust);
+        $this->assertStringContainsString('.install(bytes)', $rust);
+        $this->assertStringContainsString('stop_laravel(&app);', $rust);
+        $this->assertStringNotContainsString('wait_for_update_archive', $rust);
+        $this->assertStringNotContainsString('install-update.ps1', $rust);
     }
 
     public function test_development_does_not_block_page_load_on_remote_update_checks(): void
@@ -123,5 +140,7 @@ class UpdatePackageConfigurationTest extends TestCase
         $this->assertStringContainsString('data-desktop-dev=', $layout);
         $this->assertStringContainsString('if (!desktopDev)', $script);
         $this->assertStringContainsString("config('app.desktop_dev') || \$api->serverIsReachable()", $controller);
+        $this->assertStringNotContainsString('data-update-status-url', $layout);
+        $this->assertStringNotContainsString('data-update-download-url', $layout);
     }
 }

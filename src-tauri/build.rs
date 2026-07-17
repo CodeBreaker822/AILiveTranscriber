@@ -37,6 +37,7 @@ fn main() {
             "save_transcript_export_with_dialog",
             "choose_audio_file",
             "cancel_offline_whisper",
+            "check_app_update",
             "install_update",
         ]),
     ))

@@ -14,11 +14,13 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use tauri::{Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_updater::{Update, UpdaterExt};
 
 use std::os::windows::process::CommandExt;
 
@@ -232,6 +234,10 @@ struct LaravelProcesses {
     queue_workers: Mutex<Vec<Child>>,
 }
 
+struct PendingAppUpdate {
+    update: Mutex<Option<Update>>,
+}
+
 struct LaravelPaths {
     project_dir: PathBuf,
     database_path: PathBuf,
@@ -246,6 +252,23 @@ struct AudioFileSelection {
     name: String,
     size: u64,
     duration_ms: Option<u64>,
+}
+
+#[derive(Serialize)]
+struct AppUpdateInfo {
+    available: bool,
+    current_version: String,
+    version: String,
+    notes: String,
+    date: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+struct AppUpdateProgressEvent {
+    status: String,
+    downloaded: u64,
+    content_length: Option<u64>,
+    percent: i32,
 }
 
 fn bundled_project_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
@@ -742,9 +765,9 @@ fn start_laravel(app: &tauri::AppHandle) -> Result<(), String> {
     let mut queue_workers = Vec::new();
     for queue_name in ["audio", "transcripts", "default"] {
         let queue_stdout = startup_log_handle(&paths)?;
-        let queue_stderr = queue_stdout
-            .try_clone()
-            .map_err(|error| format!("failed to clone {queue_name} queue worker log handle: {error}"))?;
+        let queue_stderr = queue_stdout.try_clone().map_err(|error| {
+            format!("failed to clone {queue_name} queue worker log handle: {error}")
+        })?;
         let mut queue_command = laravel_command(
             paths.project_dir.join("php").join("php.exe"),
             paths.project_dir.join("artisan"),
@@ -773,7 +796,9 @@ fn start_laravel(app: &tauri::AppHandle) -> Result<(), String> {
                     let _ = worker.wait();
                 }
 
-                return Err(format!("failed to start Laravel {queue_name} queue worker: {error}"));
+                return Err(format!(
+                    "failed to start Laravel {queue_name} queue worker: {error}"
+                ));
             }
         }
     }
@@ -1211,127 +1236,103 @@ fn probe_audio_duration_ms(app: &tauri::AppHandle, path: &std::path::Path) -> Re
     Ok((duration_seconds * 1000.0).round().max(1.0) as u64)
 }
 
-fn wait_for_update_archive(archive_path: PathBuf) -> Result<PathBuf, String> {
-    let deadline = std::time::Instant::now() + Duration::from_secs(8);
+#[tauri::command]
+async fn check_app_update(
+    app: tauri::AppHandle,
+    pending: State<'_, PendingAppUpdate>,
+) -> Result<Option<AppUpdateInfo>, String> {
+    let update = app
+        .updater_builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|error| format!("failed to prepare Tauri updater: {error}"))?
+        .check()
+        .await
+        .map_err(|error| format!("failed to check for updates: {error}"))?;
 
-    loop {
-        match std::fs::canonicalize(&archive_path) {
-            Ok(path) => return Ok(path),
-            Err(_) => {}
-        }
+    let Some(update) = update else {
+        *pending.update.lock().map_err(|error| error.to_string())? = None;
+        return Ok(None);
+    };
 
-        if std::time::Instant::now() >= deadline {
-            break;
-        }
+    let info = AppUpdateInfo {
+        available: true,
+        current_version: update.current_version.clone(),
+        version: update.version.clone(),
+        notes: update.body.clone().unwrap_or_default(),
+        date: update.date.map(|date| date.to_string()),
+    };
 
-        thread::sleep(Duration::from_millis(150));
-    }
+    *pending.update.lock().map_err(|error| error.to_string())? = Some(update);
 
-    Err(format!(
-        "failed to locate downloaded update ZIP at {}",
-        archive_path.display(),
-    ))
+    Ok(Some(info))
 }
 
 #[tauri::command]
-fn install_update(app: tauri::AppHandle, archive_path: String) -> Result<(), String> {
-    let paths = laravel_paths(&app)?;
-    let archive = wait_for_update_archive(PathBuf::from(archive_path))?;
-    let update_directory = paths
-        .storage_path
-        .join("app")
-        .join("private")
-        .join("app-updates");
-    let canonical_update_directory = std::fs::canonicalize(&update_directory)
-        .map_err(|error| format!("failed to locate local update directory: {error}"))?;
+async fn install_update(
+    app: tauri::AppHandle,
+    pending: State<'_, PendingAppUpdate>,
+) -> Result<(), String> {
+    let update = pending
+        .update
+        .lock()
+        .map_err(|error| error.to_string())?
+        .clone()
+        .ok_or_else(|| "No signed Tauri update is ready to install.".to_string())?;
 
-    if !archive.starts_with(&canonical_update_directory)
-        || archive.extension().and_then(|value| value.to_str()) != Some("zip")
-    {
-        return Err("The update archive path is not allowed.".to_string());
-    }
-
-    let install_directory = std::fs::canonicalize(&paths.project_dir)
-        .map_err(|error| format!("failed to locate application directory: {error}"))?;
-    let permission_probe = install_directory.join(format!(
-        ".aitranscriber-update-write-test-{}.tmp",
-        std::process::id()
-    ));
-
-    std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&permission_probe)
-            .map_err(|error| {
-                format!(
-                    "AITranscriber cannot update files in {}. Reinstall it for the current user or grant this account write access: {error}",
-                    install_directory.display()
-                )
-            })?;
-    std::fs::remove_file(&permission_probe).map_err(|error| {
-        format!(
-            "failed to remove the update permission check in {}: {error}",
-            install_directory.display()
+    let progress_app = app.clone();
+    let downloaded = Arc::new(AtomicU64::new(0));
+    let bytes = update
+        .download(
+            {
+                let downloaded = Arc::clone(&downloaded);
+                move |chunk_length, content_length| {
+                    let downloaded = downloaded
+                        .fetch_add(chunk_length as u64, Ordering::Relaxed)
+                        .saturating_add(chunk_length as u64);
+                    let percent = content_length
+                        .filter(|total| *total > 0)
+                        .map(|total| ((downloaded as f64 / total as f64) * 100.0).round() as i32)
+                        .unwrap_or(0)
+                        .clamp(0, 100);
+                    let _ = progress_app.emit(
+                        "app-update-progress",
+                        AppUpdateProgressEvent {
+                            status: "downloading".to_string(),
+                            downloaded,
+                            content_length,
+                            percent,
+                        },
+                    );
+                }
+            },
+            {
+                let progress_app = app.clone();
+                let downloaded = Arc::clone(&downloaded);
+                move || {
+                    let downloaded = downloaded.load(Ordering::Relaxed);
+                    let _ = progress_app.emit(
+                        "app-update-progress",
+                        AppUpdateProgressEvent {
+                            status: "downloaded".to_string(),
+                            downloaded,
+                            content_length: Some(downloaded),
+                            percent: 100,
+                        },
+                    );
+                }
+            },
         )
-    })?;
-    let executable = std::env::current_exe()
-        .map_err(|error| format!("failed to locate AITranscriber executable: {error}"))?;
-    let updater_script = update_directory.join("install-update.ps1");
-    let updater_log = update_directory.join("install-update.log");
-    let script = r#"param(
-    [Parameter(Mandatory=$true)][string]$Archive,
-    [Parameter(Mandatory=$true)][string]$InstallDirectory,
-    [Parameter(Mandatory=$true)][string]$Executable,
-    [Parameter(Mandatory=$true)][int]$ParentProcessId,
-    [Parameter(Mandatory=$true)][string]$LogPath
-)
-$ErrorActionPreference = 'Stop'
-try {
-    Wait-Process -Id $ParentProcessId -ErrorAction SilentlyContinue
-    Start-Sleep -Milliseconds 750
-    Expand-Archive -LiteralPath $Archive -DestinationPath $InstallDirectory -Force
-    Remove-Item -LiteralPath $Archive -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $LogPath -Force -ErrorAction SilentlyContinue
-    Start-Process -FilePath $Executable -WorkingDirectory $InstallDirectory
-} catch {
-    "$(Get-Date -Format o) Update installation failed: $($_.Exception.Message)" | Out-File -LiteralPath $LogPath -Encoding utf8 -Append
-    if (Test-Path -LiteralPath $Executable) {
-        Start-Process -FilePath $Executable -WorkingDirectory $InstallDirectory
-    }
-    exit 1
-} finally {
-    Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
-}
-"#;
-
-    std::fs::write(&updater_script, script)
-        .map_err(|error| format!("failed to prepare update installer: {error}"))?;
-
-    let mut command = Command::new("powershell.exe");
-    command.args([
-        "-NoProfile",
-        "-NonInteractive",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-    ]);
-    command.arg(&updater_script);
-    command.arg("-Archive").arg(&archive);
-    command.arg("-InstallDirectory").arg(&install_directory);
-    command.arg("-Executable").arg(&executable);
-    command
-        .arg("-ParentProcessId")
-        .arg(std::process::id().to_string());
-    command.arg("-LogPath").arg(&updater_log);
-    command.creation_flags(CREATE_NO_WINDOW);
-    command
-        .spawn()
-        .map_err(|error| format!("failed to start update installer: {error}"))?;
+        .await
+        .map_err(|error| format!("failed to download signed Tauri update: {error}"))?;
 
     stop_laravel(&app);
-    app.exit(0);
 
-    Ok(())
+    update
+        .install(bytes)
+        .map_err(|error| format!("failed to install signed Tauri update: {error}"))?;
+
+    app.restart()
 }
 
 #[tauri::command]
@@ -1345,10 +1346,21 @@ fn main() {
     }
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .manage(LaravelProcesses {
             server: Mutex::new(None),
             queue_workers: Mutex::new(Vec::new()),
+        })
+        .manage(PendingAppUpdate {
+            update: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             open_external_url,
@@ -1357,6 +1369,7 @@ fn main() {
             save_transcript_export_with_dialog,
             choose_audio_file,
             cancel_offline_whisper,
+            check_app_update,
             install_update
         ])
         .setup(|app| {

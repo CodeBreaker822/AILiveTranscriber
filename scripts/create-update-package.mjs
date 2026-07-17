@@ -229,6 +229,21 @@ function copyPayload(stagingDirectory) {
     }
 }
 
+function assertReleasePayloadReady() {
+    const missing = payload.filter((relativePath) => !existsSync(path.join(releaseRoot, relativePath)));
+
+    if (missing.length === 0) {
+        return;
+    }
+
+    throw new Error([
+        'Release build output is incomplete. Build the desktop app before creating an update package.',
+        'Run: .\\node\\npm.cmd run tauri:build',
+        `Missing from ${releaseRoot}:`,
+        ...missing.map((relativePath) => `- ${relativePath}`),
+    ].join('\n'));
+}
+
 function verifyReleaseSherpaModels() {
     for (const model of bundledSherpaModels) {
         const modelPath = path.join(releaseRoot, 'sherpa', 'models', model.file);
@@ -290,6 +305,7 @@ const temporaryVersionFile = path.join(outputDirectory, '.version.json.tmp');
 const stagingDirectory = mkdtempSync(path.join(os.tmpdir(), 'aitranscriber-update-'));
 
 try {
+    assertReleasePayloadReady();
     verifyReleaseSherpaModels();
     copyPayload(stagingDirectory);
     writeFileSync(
