@@ -24,6 +24,45 @@ class UpdatePackageConfigurationTest extends TestCase
         $this->assertStringContainsString('tauri.release.conf.json', $desktopBuilder);
     }
 
+    public function test_tauri_update_pushes_only_update_assets_to_public_repo(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2).'/scripts/push-tauri-update.ps1');
+
+        $this->assertStringContainsString('git@github.com:CodeBreaker822/AITranscriberAPP.git', $script);
+        $this->assertStringContainsString('lfs track "updates/**"', $script);
+        $this->assertStringContainsString('latest.json', $script);
+        $this->assertStringContainsString('*.exe', $script);
+        $this->assertStringContainsString('.sig', $script);
+        $this->assertStringContainsString('updates\\$releaseDirectoryName', $script);
+        $this->assertStringContainsString('release\AITranscriberAPP\README.template.md', $script);
+        $this->assertStringContainsString('Render-Template', $script);
+        $this->assertStringContainsString('APP_VERSION = $nextVersion', $script);
+        $this->assertStringContainsString('UPDATE_FOLDER = $releaseDirectoryName', $script);
+        $this->assertStringContainsString('INSTALLER_FILE = $installer.Name', $script);
+        $this->assertStringContainsString('Set-ProjectVersion', $script);
+        $this->assertStringContainsString('src-tauri\Cargo.toml', $script);
+        $this->assertStringNotContainsString('https://api.github.com', $script);
+        $this->assertStringNotContainsString('GH_TOKEN', $script);
+        $this->assertStringNotContainsString('git ls-files', $script);
+    }
+
+    public function test_public_app_repository_readme_is_user_facing_distribution_guidance(): void
+    {
+        $readme = file_get_contents(dirname(__DIR__, 2).'/release/AITranscriberAPP/README.template.md');
+
+        $this->assertStringContainsString('Click the `updates` folder.', $readme);
+        $this->assertStringContainsString('Open the newest version folder', $readme);
+        $this->assertStringContainsString('{{UPDATE_FOLDER}}', $readme);
+        $this->assertStringContainsString('click **Download raw file**', $readme);
+        $this->assertStringContainsString('Do not use GitHub\'s **Code > Download ZIP** button', $readme);
+        $this->assertStringContainsString('{{INSTALLER_FILE}}', $readme);
+        $this->assertStringContainsString('{{APP_VERSION}}', $readme);
+        $this->assertStringContainsString('checks this repository for signed updates automatically', $readme);
+        $this->assertStringContainsString('This repository is the public app update channel', $readme);
+        $this->assertStringContainsString('currently maintained by one developer', $readme);
+        $this->assertStringNotContainsString('Developer work stays in the private development repository', $readme);
+    }
+
     public function test_update_payload_excludes_whisper_and_records_the_server_api_path(): void
     {
         $script = file_get_contents(dirname(__DIR__, 2).'/scripts/create-update-package.mjs');
@@ -68,7 +107,29 @@ class UpdatePackageConfigurationTest extends TestCase
         $this->assertNotContains('.git', array_values($resources), true);
         $this->assertNotContains('whisper', array_values($resources), true);
         $this->assertNotContains('.git-broken', array_values($resources), true);
+        $this->assertSame('sherpa-onnx-c-api.dll', $resources['target/release/sherpa-onnx-c-api.dll'] ?? null);
+        $this->assertSame('sherpa-onnx-cxx-api.dll', $resources['target/release/sherpa-onnx-cxx-api.dll'] ?? null);
+        $this->assertSame('onnxruntime.dll', $resources['target/release/onnxruntime.dll'] ?? null);
+        $this->assertSame('onnxruntime_providers_shared.dll', $resources['target/release/onnxruntime_providers_shared.dll'] ?? null);
         $this->assertArrayNotHasKey('target/release/vulkan-1.dll', $resources);
+    }
+
+    public function test_runtime_executables_stay_as_resources_until_a_sidecar_contract_is_needed(): void
+    {
+        $config = json_decode(
+            file_get_contents(dirname(__DIR__, 2).'/tauri.release.conf.json'),
+            true,
+        );
+        $cargo = file_get_contents(dirname(__DIR__, 2).'/src-tauri/Cargo.toml');
+
+        $this->assertArrayNotHasKey('externalBin', $config['bundle'] ?? []);
+        $this->assertStringNotContainsString('tauri-plugin-shell', $cargo);
+
+        $resources = $config['bundle']['resources'] ?? [];
+        $this->assertSame('php', $resources['../php'] ?? null);
+        $this->assertSame('ffmpeg', $resources['../ffmpeg'] ?? null);
+        $this->assertSame('vad', $resources['../build/vad'] ?? null);
+        $this->assertSame('sherpa', $resources['../sherpa'] ?? null);
     }
 
     public function test_tauri_official_updater_is_configured_for_signed_windows_updates(): void
@@ -83,11 +144,11 @@ class UpdatePackageConfigurationTest extends TestCase
         );
         $rust = file_get_contents(dirname(__DIR__, 2).'/src-tauri/src/main.rs');
 
-        $this->assertSame('1.0.0', $tauriConfig['version']);
+        $this->assertMatchesRegularExpression('/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/', $tauriConfig['version']);
         $this->assertTrue($tauriConfig['bundle']['createUpdaterArtifacts'] ?? false);
         $this->assertNotEmpty(data_get($tauriConfig, 'plugins.updater.pubkey'));
         $this->assertSame(
-            ['https://github.com/CodeBreaker822/AITranscriberAPP/releases/latest/download/latest.json'],
+            ['https://raw.githubusercontent.com/CodeBreaker822/AITranscriberAPP/main/latest.json'],
             data_get($tauriConfig, 'plugins.updater.endpoints'),
         );
         $this->assertSame('passive', data_get($tauriConfig, 'plugins.updater.windows.installMode'));
@@ -127,6 +188,8 @@ class UpdatePackageConfigurationTest extends TestCase
         $this->assertStringContainsString('.download(', $rust);
         $this->assertStringContainsString('.install(bytes)', $rust);
         $this->assertStringContainsString('stop_laravel(&app);', $rust);
+        $this->assertStringContainsString('status: "installing".to_string()', $rust);
+        $this->assertStringNotContainsString('app.restart()', $rust);
         $this->assertStringNotContainsString('wait_for_update_archive', $rust);
         $this->assertStringNotContainsString('install-update.ps1', $rust);
     }

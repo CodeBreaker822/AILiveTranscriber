@@ -1328,11 +1328,23 @@ async fn install_update(
 
     stop_laravel(&app);
 
+    let _ = app.emit(
+        "app-update-progress",
+        AppUpdateProgressEvent {
+            status: "installing".to_string(),
+            downloaded: bytes.len() as u64,
+            content_length: Some(bytes.len() as u64),
+            percent: 100,
+        },
+    );
+
+    *pending.update.lock().map_err(|error| error.to_string())? = None;
+
     update
         .install(bytes)
         .map_err(|error| format!("failed to install signed Tauri update: {error}"))?;
 
-    app.restart()
+    Ok(())
 }
 
 #[tauri::command]

@@ -710,18 +710,19 @@ src-tauri\target\release\bundle\nsis\
 `tauri:build` creates the NSIS installer and official signed Tauri updater
 artifacts for local verification. The updater public key is stored in
 `src-tauri/tauri.conf.json`; keep the private signing key outside the repository
-and set `TAURI_SIGNING_PRIVATE_KEY_PATH` when building releasable updates
-locally:
+and set `TAURI_SIGNING_PRIVATE_KEY` to the key contents when
+building releasable updates locally:
 
 ```powershell
 .\node\npm.cmd run tauri:build
 ```
 
-Production releases are automated by `.github/workflows/release.yml`. Add these
-repository secrets once in GitHub:
-
-- `TAURI_SIGNING_PRIVATE_KEY`: the contents of `C:\Users\jerve\.tauri\aitranscriber-updater.key`.
-- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: only if the updater key was generated with a password.
+Production updater uploads are automated by `tauri:update` using the existing SSH
+Git access to `git@github.com:CodeBreaker822/AITranscriberAPP.git`. Git LFS is
+used for updater binaries. The Tauri signing key is read from
+`C:\Users\jerve\.tauri\aitranscriber-updater.key` by default, or from
+`TAURI_SIGNING_PRIVATE_KEY` when that environment variable is set to the key
+contents.
 
 To test the updater configuration:
 
@@ -737,18 +738,37 @@ git commit -m "Your message"
 git push origin main
 ```
 
-Client updater releases are pushed separately to the public
+Client updater files are uploaded separately to the public
 `CodeBreaker822/AITranscriberAPP` repository:
 
 ```powershell
 .\node\npm.cmd run tauri:update
 ```
 
-`tauri:update` does not create local git tags. It pushes the current committed
-`HEAD` to the public updater repository. GitHub Actions there builds the Windows
-installer, signs the updater artifact, creates the GitHub release from the app
-version in `src-tauri/tauri.conf.json`, and uploads `latest.json` to the endpoint configured as
-`https://github.com/CodeBreaker822/AITranscriberAPP/releases/latest/download/latest.json`.
+`tauri:update` asks whether the update is Minor, Medium, or Major. Minor bumps
+the patch version (`1.0.0` to `1.0.1`), Medium bumps the middle version
+(`1.0.0` to `1.1.0`), and Major bumps the first version (`1.0.0` to `2.0.0`).
+It does not create local git tags and does not push the private `origin`. After
+updater tests pass, it builds the official signed Tauri updater artifacts
+locally, then pushes only `latest.json` and the files under `updates/app-vX.Y.Z/`
+to the public updater repository over SSH. The app checks
+`https://raw.githubusercontent.com/CodeBreaker822/AITranscriberAPP/main/latest.json`.
+If a build failed after the version was already bumped, rerun the upload with
+the current version instead of bumping again:
+
+```powershell
+.\node\npm.cmd run tauri:update -- -UseCurrentVersion
+```
+
+If the build finished but the final SSH push failed, retry the upload without
+rebuilding:
+
+```powershell
+Start-Service ssh-agent
+ssh-add $env:USERPROFILE\.ssh\id_ed25519
+ssh -T git@github.com
+.\node\npm.cmd run tauri:update -- -UseCurrentVersion -SkipBuild
+```
 That static JSON file includes the SemVer `version`, notes, and the Windows
 platform entry with the artifact `url` and `signature`.
 
@@ -794,11 +814,13 @@ the installer and signed updater artifacts. `tauri:package:empty` runs the same
 official build path with the empty database snapshot.
 
 Rust dependency debug symbols and incremental compilation are disabled to keep
-the Tauri target directory manageable. Successful `tauri:build` commands prune
-release-only compilation caches after the executable and bundles are complete.
-Run `npm run clean:tauri` to remove development and release compilation caches
-manually; it preserves executables, installers, updater artifacts, packaged resources,
-models, databases, and storage. The next development compilation will take longer.
+the Tauri target directory manageable. Successful `tauri:build` commands preserve
+the release compilation cache by default so later builds can reuse compiled Rust
+dependencies. Run `npm run clean:tauri` only when you need to reclaim disk space;
+it preserves executables, installers, updater artifacts, packaged resources,
+models, databases, and storage, but the next release compilation will take longer.
+Set `AI_TRANSCRIBER_PRUNE_TAURI_CACHE=1` for a one-off build that prunes the
+release cache after packaging.
 
 Required hosted API configuration:
 

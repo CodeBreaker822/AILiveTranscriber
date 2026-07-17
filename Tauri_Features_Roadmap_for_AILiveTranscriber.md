@@ -41,6 +41,22 @@ Bundle these as official Tauri sidecars:
 **Benefits** - Better process management - Reliable executable paths -
 Proper process cancellation - Easier logging
 
+**Current scope decision**
+
+Do not convert binaries to sidecars unless the sidecar improves process
+ownership or fixes a real packaged-path problem.
+
+-   PHP is the only realistic sidecar candidate because Tauri starts and
+    stops the Laravel server and queue workers. It must not be split from
+    its adjacent DLLs, `php.ini`, extensions, and CA bundle.
+-   FFmpeg stays as a bundled resource for now. Laravel already invokes it
+    as a short-lived CLI process, so sidecaring it would not make audio
+    processing faster.
+-   Whisper stays native inside the Tauri executable. The offline worker is
+    already a supervised child process of the app executable.
+-   Sherpa stays as bundled DLLs and models. The executable surface is the
+    VAD CLI, which Laravel already runs directly from bundled resources.
+
 ------------------------------------------------------------------------
 
 ## Capabilities & Permissions ⭐⭐⭐⭐⭐

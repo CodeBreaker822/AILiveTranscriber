@@ -79,6 +79,7 @@ const commonPayload = [
 const payload = [
     'aitranscriber.exe',
     'sherpa-onnx-c-api.dll',
+    'sherpa-onnx-cxx-api.dll',
     'onnxruntime.dll',
     'onnxruntime_providers_shared.dll',
     ...commonPayload,

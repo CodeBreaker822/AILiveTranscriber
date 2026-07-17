@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/@tauri-apps/cli/config.schema.json",
   "build": {
+    "beforeBuildCommand": "node scripts\\prepare-desktop.mjs",
     "frontendDist": "../build/tauri/public"
   },
   "app": {
@@ -37,6 +38,7 @@
       "../ffmpeg": "ffmpeg",
       "../sherpa": "sherpa",
       "target/release/sherpa-onnx-c-api.dll": "sherpa-onnx-c-api.dll",
+      "target/release/sherpa-onnx-cxx-api.dll": "sherpa-onnx-cxx-api.dll",
       "target/release/onnxruntime.dll": "onnxruntime.dll",
       "target/release/onnxruntime_providers_shared.dll": "onnxruntime_providers_shared.dll"
     }

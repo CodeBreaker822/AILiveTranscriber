@@ -81,6 +81,13 @@ child.on('exit', (code, signal) => {
         return;
     }
 
+    if (process.env.AI_TRANSCRIBER_PRUNE_TAURI_CACHE !== '1') {
+        console.log('Preserved Tauri release compilation cache for faster future builds.');
+        console.log('Run `npm run clean:tauri` when you need to reclaim disk space.');
+        process.exitCode = 0;
+        return;
+    }
+
     try {
         const reclaimed = cleanReleaseCache();
         console.log(`Pruned ${reclaimed} of release compilation cache; final bundles were preserved.`);

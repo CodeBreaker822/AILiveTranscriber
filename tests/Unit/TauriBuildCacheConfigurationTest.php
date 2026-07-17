@@ -28,7 +28,7 @@ class TauriBuildCacheConfigurationTest extends TestCase
         $this->assertStringContainsString('strip = "symbols"', $manifest);
     }
 
-    public function test_release_build_prunes_only_compilation_cache(): void
+    public function test_release_build_preserves_compilation_cache_by_default(): void
     {
         $root = dirname(__DIR__, 2);
         $package = json_decode(file_get_contents($root.'/package.json'), true);
@@ -36,7 +36,8 @@ class TauriBuildCacheConfigurationTest extends TestCase
         $cleaner = file_get_contents($root.'/scripts/clean-tauri-cache.mjs');
 
         $this->assertSame('node scripts/clean-tauri-cache.mjs', $package['scripts']['clean:tauri'] ?? null);
-        $this->assertStringContainsString('cleanReleaseCache()', $builder);
+        $this->assertStringContainsString('AI_TRANSCRIBER_PRUNE_TAURI_CACHE', $builder);
+        $this->assertStringContainsString('Preserved Tauri release compilation cache', $builder);
         $this->assertStringContainsString('src-tauri/target/release/deps', $cleaner);
         $this->assertStringContainsString('src-tauri/target/debug', $cleaner);
         $this->assertStringNotContainsString("'src-tauri/target/release/bundle'", $cleaner);
