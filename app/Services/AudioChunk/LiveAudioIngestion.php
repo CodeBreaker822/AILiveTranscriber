@@ -30,6 +30,7 @@ class LiveAudioIngestion
         $categoryName = trim((string) $validated['category_name']);
         $speakerSessionId = trim((string) ($validated['speaker_session_id'] ?? ''));
         $finalizeSession = (bool) ($validated['finalize_session'] ?? false);
+        $useDiarization = (bool) ($validated['use_diarization'] ?? true);
         $preparedClip = null;
 
         try {
@@ -63,10 +64,12 @@ class LiveAudioIngestion
                 ...(isset($validated['progress_id']) ? ['progress_id' => $validated['progress_id']] : []),
                 ...($finalizeSession ? ['release_worker' => true] : []),
             ]);
-            $transcription = $this->speakerDiarization->apply($transcriptionAudio['path'], $transcription, [
-                'clip_start_ms' => (int) $validated['clip_start_ms'],
-                'speaker_session_id' => $speakerSessionId,
-            ]);
+            if ($useDiarization) {
+                $transcription = $this->speakerDiarization->apply($transcriptionAudio['path'], $transcription, [
+                    'clip_start_ms' => (int) $validated['clip_start_ms'],
+                    'speaker_session_id' => $speakerSessionId,
+                ]);
+            }
         } catch (SpeechToTextException $exception) {
             $this->cleanupPreparedClip($preparedClip);
 
@@ -121,7 +124,9 @@ class LiveAudioIngestion
 
         $this->cleanupPreparedClip($preparedClip);
         if ($finalizeSession) {
-            $this->speakerDiarization->releaseSession($speakerSessionId);
+            if ($useDiarization) {
+                $this->speakerDiarization->releaseSession($speakerSessionId);
+            }
         }
 
         unset($row['status']);

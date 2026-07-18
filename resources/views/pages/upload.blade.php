@@ -92,6 +92,23 @@
 
                         </div>
 
+                        <div class="grid grid-cols-2 gap-2">
+                            <label class="flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[0.7rem] font-semibold text-slate-100 transition hover:border-cyan-300/30 hover:bg-cyan-300/10">
+                                <input type="checkbox" data-use-vad checked class="h-4 w-4 rounded border-white/20 bg-slate-950 text-cyan-300 focus:ring-cyan-300/40">
+                                <span class="min-w-0">
+                                    <span class="block truncate">Silero VAD</span>
+                                    <span class="block truncate text-[0.62rem] font-normal text-slate-400">Speech filter</span>
+                                </span>
+                            </label>
+                            <label class="flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[0.7rem] font-semibold text-slate-100 transition hover:border-cyan-300/30 hover:bg-cyan-300/10">
+                                <input type="checkbox" data-use-diarization checked class="h-4 w-4 rounded border-white/20 bg-slate-950 text-cyan-300 focus:ring-cyan-300/40">
+                                <span class="min-w-0">
+                                    <span class="block truncate">Sherpa Speakers</span>
+                                    <span class="block truncate text-[0.62rem] font-normal text-slate-400">Speaker labels</span>
+                                </span>
+                            </label>
+                        </div>
+
                         <div class="flex items-center gap-2 rounded-lg border border-dashed border-cyan-300/25 bg-cyan-300/5 p-2">
                             <label for="audio_file" class="inline-flex min-h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-[0.66rem] font-semibold text-white transition hover:border-cyan-300/30 hover:bg-cyan-300/10">
                                 <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -107,6 +124,24 @@
                                 <p data-upload-file-meta class="truncate text-[0.68rem] leading-4 text-slate-400">WAV, MP3, M4A, AAC, OGG, FLAC.</p>
                                 <p class="text-[0.68rem] text-slate-400">Duration: <span data-upload-duration class="font-semibold text-slate-200">--:--</span></p>
                             </div>
+                        </div>
+
+                        <div class="flex flex-nowrap items-center gap-1">
+                            <button type="button" data-upload-queue disabled class="inline-flex min-h-7 flex-1 cursor-pointer items-center justify-center rounded-lg bg-cyan-300 px-1.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-600 disabled:text-slate-300">
+                                Start
+                            </button>
+                            <button type="button" data-upload-pause disabled class="inline-flex min-h-7 flex-1 cursor-pointer items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] px-1.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-white transition hover:border-cyan-300/30 hover:bg-cyan-300/10 disabled:cursor-not-allowed disabled:opacity-50">
+                                Pause
+                            </button>
+                            <button type="button" data-upload-continue disabled class="inline-flex min-h-7 flex-1 cursor-pointer items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] px-1.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-white transition hover:border-cyan-300/30 hover:bg-cyan-300/10 disabled:cursor-not-allowed disabled:opacity-50">
+                                Continue
+                            </button>
+                            <button type="button" data-upload-retry disabled class="inline-flex min-h-7 flex-1 cursor-pointer items-center justify-center rounded-lg border border-amber-300/20 bg-amber-300/10 px-1.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-amber-100 transition hover:border-amber-300/30 hover:bg-amber-300/15 disabled:cursor-not-allowed disabled:opacity-50">
+                                Retry
+                            </button>
+                            <button type="button" data-upload-cancel disabled class="inline-flex min-h-7 flex-1 cursor-pointer items-center justify-center rounded-lg border border-rose-400/20 bg-rose-400/10 px-1.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-rose-100 transition hover:border-rose-400/30 hover:bg-rose-400/15 disabled:cursor-not-allowed disabled:opacity-50">
+                                Cancel
+                            </button>
                         </div>
                     </form>
                 </section>
@@ -134,23 +169,6 @@
                             <div class="mt-1.5 h-1 overflow-hidden rounded-full bg-slate-800/80">
                                 <div data-upload-sherpa-bar class="h-full w-0 rounded-full bg-cyan-300 transition-[width] duration-300"></div>
                             </div>
-                        </div>
-                        <div class="mt-1.5 flex flex-nowrap items-center gap-1">
-                            <button type="button" data-upload-queue disabled class="inline-flex min-h-7 flex-1 cursor-pointer items-center justify-center rounded-lg bg-cyan-300 px-1.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-600 disabled:text-slate-300">
-                                Start
-                            </button>
-                            <button type="button" data-upload-pause disabled class="inline-flex min-h-7 flex-1 cursor-pointer items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] px-1.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-white transition hover:border-cyan-300/30 hover:bg-cyan-300/10 disabled:cursor-not-allowed disabled:opacity-50">
-                                Pause
-                            </button>
-                            <button type="button" data-upload-continue disabled class="inline-flex min-h-7 flex-1 cursor-pointer items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] px-1.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-white transition hover:border-cyan-300/30 hover:bg-cyan-300/10 disabled:cursor-not-allowed disabled:opacity-50">
-                                Continue
-                            </button>
-                            <button type="button" data-upload-retry disabled class="inline-flex min-h-7 flex-1 cursor-pointer items-center justify-center rounded-lg border border-amber-300/20 bg-amber-300/10 px-1.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-amber-100 transition hover:border-amber-300/30 hover:bg-amber-300/15 disabled:cursor-not-allowed disabled:opacity-50">
-                                Retry
-                            </button>
-                            <button type="button" data-upload-cancel disabled class="inline-flex min-h-7 flex-1 cursor-pointer items-center justify-center rounded-lg border border-rose-400/20 bg-rose-400/10 px-1.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-rose-100 transition hover:border-rose-400/30 hover:bg-rose-400/15 disabled:cursor-not-allowed disabled:opacity-50">
-                                Cancel
-                            </button>
                         </div>
                     </div>
                 </section>

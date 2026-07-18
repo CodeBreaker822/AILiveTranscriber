@@ -1,14 +1,10 @@
 import { buildUploadSessionErrorMessage } from '../shared/api-errors.js';
 import { escapeHtml, notify, notifyError, readNearbyControlValue, withButtonLoading } from '../shared/dom.js';
 import { exportTranscriptRows } from '../shared/export-service.js';
-import { formatBytes, formatClipRange, formatClock, slugify, sortByTimeAscending } from '../shared/formatters.js';
+import { formatBytes, formatClipRange, formatClock, sortByTimeAscending } from '../shared/formatters.js';
 import { clampProgressPercent, createPhaseProgress, phaseProgressAverage, phaseProgressSummary } from '../shared/progress.js';
-import { buildCleanerBatches, countCleanerBatches } from '../shared/cleaner-batches.js';
 import { normalizeStoredItem } from '../shared/normalize.js';
 import {
-    buildExportRows,
-    hasUsefulTranscript,
-    isUsefulTranscriptText,
     renderTranscriptText,
 } from '../shared/transcripts.js';
 import { createUploadWorkflowState } from './upload-state.js';
@@ -68,11 +64,14 @@ export const initUploadPage = (context) => {
     const storedUrl = String($body.attr('data-stored-url') || '');
     const vadLogUrl = String($body.attr('data-vad-log-url') || '');
     const furnishUrl = String($body.attr('data-furnish-url') || '');
+    const exportUrl = String($body.attr('data-export-url') || '');
     const defaultUserId = Number($body.attr('data-default-user-id') || 1);
     const $form = $('[data-upload-form]');
     const $categoryInput = $('[data-upload-category]');
     const $categorySuggestions = $('[data-upload-category-suggestions]');
     const $languageInput = $('[data-upload-language]');
+    const $useVad = $('[data-use-vad]');
+    const $useDiarization = $('[data-use-diarization]');
     const $fileInput = $('[data-upload-file]');
     const $fileName = $('[data-upload-file-name]');
     const $fileMeta = $('[data-upload-file-meta]');
@@ -115,13 +114,16 @@ export const initUploadPage = (context) => {
         Number($body.attr('data-resource-cpu-threads') || window.navigator?.hardwareConcurrency || 1) || 1,
     ));
 
-    const hasUsefulUploadTranscript = hasUsefulTranscript;
+    const hasUsefulUploadTranscript = (item) => item?.is_useful === true
+        || String(item?.translatedText || item?.translated_text || '').trim() !== '';
 
     const getUploadCategory = () => String($categoryInput.val() || '').trim();
 
     const getUploadLanguageCode = () => getTranscriptionEngine() === 'offline'
         ? 'auto'
         : String($languageInput.val() || 'multi').trim() || 'multi';
+    const shouldUseVad = () => $useVad.length === 0 || $useVad.prop('checked');
+    const shouldUseDiarization = () => $useDiarization.length === 0 || $useDiarization.prop('checked');
 
     const hasCleanedUploadTranscriptForCategory = (categoryName) => (
         uploadState.uploadCleanedCategoryName
@@ -162,23 +164,21 @@ export const initUploadPage = (context) => {
 
     const hasUploadProgress = () => uploadState.preparedSections.length > 0;
 
-    const uploadOnlinePhaseDefinitions = [
+    const uploadBasePhaseDefinitions = () => [
         { key: 'prepare', label: 'Prepare' },
-        { key: 'silero', label: 'Silero' },
+        ...(shouldUseVad() ? [{ key: 'silero', label: 'Silero' }] : []),
         { key: 'transcribe', label: 'Whisper' },
     ];
-    const uploadOfflinePhaseDefinitions = [
-        { key: 'prepare', label: 'Prepare' },
-        { key: 'silero', label: 'Silero' },
-        { key: 'transcribe', label: 'Server/Whisper' },
-        { key: 'sherpa', label: 'Diarization' },
+    const uploadOfflinePhaseDefinitions = () => [
+        ...uploadBasePhaseDefinitions(),
+        ...(shouldUseDiarization() ? [{ key: 'sherpa', label: 'Diarization' }] : []),
     ];
     const uploadSherpaPhaseDefinitions = [
         { key: 'sherpa', label: 'Diarization' },
     ];
     const getUploadPhaseDefinitions = () => getTranscriptionEngine() === 'offline'
-        ? uploadOfflinePhaseDefinitions
-        : uploadOnlinePhaseDefinitions;
+        ? uploadOfflinePhaseDefinitions()
+        : uploadBasePhaseDefinitions();
     const resetUploadPhaseProgress = () => {
         uploadState.activeUploadPhaseProgress = null;
         uploadState.activeUploadPhaseDefinitions = [];
@@ -227,7 +227,7 @@ export const initUploadPage = (context) => {
 
         updateUploadPhaseProgress({
             prepare: percent,
-            silero: percent,
+            ...(shouldUseVad() ? { silero: percent } : {}),
         }, `Preparing audio ${Math.max(0, completed)} of ${Math.max(0, total)}`);
     };
     const markUploadSherpaProgress = (percent, label = '') => {
@@ -563,9 +563,11 @@ export const initUploadPage = (context) => {
         });
     };
 
-    const getCleanerBatchCount = () => countCleanerBatches(getUploadStoredItemsForCategory());
+    const getCleanerBatchCount = () => getUploadStoredItemsForCategory().length;
 
-    const getCleanerBatches = () => buildCleanerBatches(getUploadStoredItemsForCategory());
+    const getCleanerChunkIds = () => getUploadStoredItemsForCategory()
+        .map((item) => Number(item.id || item.audioChunkId || item.audio_chunk_id || 0))
+        .filter((id) => id > 0);
 
     const updateCleanerProgress = () => {
         const total = getCleanerBatchCount();
@@ -736,7 +738,8 @@ export const initUploadPage = (context) => {
         const rawItems = getUploadStoredItemsForCategory();
         const completed = useCleaned
             ? (hasCleanedUploadTranscriptForCategory(selectedCategory)
-                ? uploadState.cleanedSections.filter((section) => hasUsefulTranscriptText(section.cleanText || section.clean_text || ''))
+                ? uploadState.cleanedSections.filter((section) => section.is_useful !== false
+                    && String(section.cleanText || section.clean_text || '').trim() !== '')
                 : [])
             : rawItems;
 
@@ -754,12 +757,7 @@ export const initUploadPage = (context) => {
         $transcriptList.html(completed.map((section) => {
             const itemId = section.id || section.audioChunkId || section.audio_chunk_id || '';
             const playableItem = rawItems.find((item) => String(item.id) === String(itemId));
-            const translatedText = useCleaned
-                ? (section.cleanText || section.clean_text || '')
-                : (section.translatedText || section.translated_text || section.text || '');
-            const transcriptTimestamps = useCleaned
-                ? (section.cleanTimestamps || section.clean_timestamps || [])
-                : (section.timestamps || section.transcription_timestamps || []);
+            const viewItem = useCleaned ? section : playableItem;
 
             return `
             <article data-upload-stored-item="${itemId}" class="w-full border-b border-white/8 py-2.5 last:border-b-0">
@@ -800,7 +798,7 @@ export const initUploadPage = (context) => {
                         ` : ''}
                     </div>
                     <div class="min-w-0 flex-1">
-                        ${renderTranscriptText(translatedText, transcriptTimestamps)}
+                        ${renderTranscriptText(viewItem || section)}
                     </div>
                 </div>
             </article>
@@ -819,7 +817,8 @@ export const initUploadPage = (context) => {
         const useCleaned = exportMode === 'clean';
         const completed = useCleaned
             ? (hasCleanedUploadTranscriptForCategory(selectedCategory)
-                ? uploadState.cleanedSections.filter((section) => hasUsefulTranscriptText(section.cleanText || section.clean_text || ''))
+                ? uploadState.cleanedSections.filter((section) => section.is_useful !== false
+                    && String(section.cleanText || section.clean_text || '').trim() !== '')
                 : [])
             : getUploadStoredItemsForCategory();
 
@@ -830,20 +829,16 @@ export const initUploadPage = (context) => {
             return;
         }
 
-        const rows = buildExportRows(completed, useCleaned);
-
-        if (!rows.length) {
-            notifyError('No useful transcript text is ready to export yet.');
-            return;
+        try {
+            await withButtonLoading($(event?.currentTarget || []), () => exportTranscriptRows({
+                exportUrl,
+                categoryName: selectedCategory,
+                mode: useCleaned ? 'clean' : 'raw',
+                format: exportFormat,
+            }));
+        } catch (error) {
+            notifyError(String(error?.message || error || 'No transcription is ready to export yet.'));
         }
-
-        await withButtonLoading($(event?.currentTarget || []), () => exportTranscriptRows({
-            rows,
-            format: exportFormat,
-            filenameBase: `${slugify(selectedCategory || uploadState.selectedFile?.name)}-${useCleaned ? 'cleaned' : 'raw'}-transcription`,
-            title: selectedCategory || uploadState.selectedFile?.name || 'Upload audio',
-            variantLabel: useCleaned ? 'Cleaned' : 'Raw',
-        }));
     };
 
     const renderVadLogs = (logs, categoryName) => {
@@ -959,6 +954,10 @@ export const initUploadPage = (context) => {
                 rangeLabel: row.range_label || '',
                 cleanText: row.clean_text || '',
                 cleanTimestamps: row.clean_timestamps || [],
+                is_useful: row.is_useful ?? (String(row.clean_text || '').trim() !== ''),
+                displayText: row.display_text ?? (String(row.clean_text || '').trim()),
+                speakerTurns: Array.isArray(row.speaker_turns) ? row.speaker_turns : [],
+                speakerLabels: Array.isArray(row.speaker_labels) ? row.speaker_labels : [],
             });
         });
 
@@ -998,36 +997,33 @@ export const initUploadPage = (context) => {
         updateCleanerProgress();
 
         try {
-            const batches = getCleanerBatches();
-            const total = batches.length;
+            const chunkIds = getCleanerChunkIds();
 
-            for (let batchIndex = 0; batchIndex < batches.length; batchIndex += 1) {
-                const batch = batches[batchIndex];
-                const response = await backgroundAjax({
-                    url: furnishUrl,
-                    method: 'POST',
-                    data: {
-                        user_id: defaultUserId,
-                        category_name: categoryName,
-                        audio_chunk_ids: batch.audioChunkIds,
-                        instructions,
-                    },
-                }, {
-                    timeoutMs: 600000,
-                    intervalMs: 900,
-                });
-                const rows = Array.isArray(response?.data) ? response.data : [];
-
-                mergeCleanedRows(rows);
-                uploadState.cleanerCompletedBatches = batchIndex + 1;
+            if (!chunkIds.length) {
+                uploadState.cleanerStatus = 'Complete';
                 updateCleanerProgress();
                 renderTranscript();
-
-                if (batchIndex < total - 1) {
-                    await pause(4000);
-                }
+                notify('Transcript polished.');
+                return;
             }
 
+            const response = await backgroundAjax({
+                url: furnishUrl,
+                method: 'POST',
+                data: {
+                    user_id: defaultUserId,
+                    category_name: categoryName,
+                    audio_chunk_ids: chunkIds,
+                    instructions,
+                },
+            }, {
+                timeoutMs: 600000,
+                intervalMs: 900,
+            });
+            const rows = Array.isArray(response?.data) ? response.data : [];
+
+            mergeCleanedRows(rows);
+            uploadState.cleanerCompletedBatches = chunkIds.length;
             uploadState.cleanerStatus = 'Complete';
             updateCleanerProgress();
             renderTranscript();
@@ -1268,6 +1264,7 @@ export const initUploadPage = (context) => {
                             category_name: categoryName,
                             concurrency: batch.length,
                             speaker_session_id: getTranscriptionEngine() === 'online' ? sessionId : '',
+                            use_vad: shouldUseVad() ? 1 : 0,
                             sections: batch.map(({ section }) => ({
                                 clip_index: section.index,
                                 clip_start_ms: section.startMs,
@@ -1355,6 +1352,7 @@ export const initUploadPage = (context) => {
                     method: 'POST',
                     data: buildUploadSectionFormData(sessionId, categoryName, section, {
                         speaker_session_id: getTranscriptionEngine() === 'online' ? sessionId : '',
+                        use_vad: shouldUseVad() ? 1 : 0,
                     }),
                     processData: false,
                     contentType: false,
@@ -1411,7 +1409,7 @@ export const initUploadPage = (context) => {
     };
 
     const startPreparedUploadDiarization = async (sessionId) => {
-        if (getTranscriptionEngine() !== 'online' || !uploadDiarizeUrl) {
+        if (!shouldUseDiarization() || getTranscriptionEngine() !== 'online' || !uploadDiarizeUrl) {
             return [];
         }
 
@@ -1491,7 +1489,7 @@ export const initUploadPage = (context) => {
         }
         updateUploadPhaseProgress({
             prepare: 100,
-            silero: 100,
+            ...(shouldUseVad() ? { silero: 100 } : {}),
         }, 'Processing');
 
         const commonSectionPayload = (section) => ({
@@ -1619,6 +1617,8 @@ export const initUploadPage = (context) => {
                             transcription_engine: getTranscriptionEngine(),
                             whisper_model: getWhisperModel(),
                             speaker_session_id: sessionId,
+                            use_vad: shouldUseVad() ? 1 : 0,
+                            use_diarization: shouldUseDiarization() ? 1 : 0,
                             finalize_session: lastPosition === uploadState.preparedSections.length ? 1 : 0,
                             sections: batch.map(({ section }) => commonSectionPayload(section)),
                         }),
@@ -1677,6 +1677,8 @@ export const initUploadPage = (context) => {
             formData.append('transcription_engine', getTranscriptionEngine());
             formData.append('whisper_model', getWhisperModel());
             formData.append('speaker_session_id', sessionId);
+            formData.append('use_vad', shouldUseVad() ? '1' : '0');
+            formData.append('use_diarization', shouldUseDiarization() ? '1' : '0');
             formData.append('source_name', section.sourceName || '');
             formData.append('prepared_name', section.preparedName || '');
             formData.append('prepared_skipped', section.preparedSkipped ? '1' : '0');

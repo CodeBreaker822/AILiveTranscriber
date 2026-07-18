@@ -6,6 +6,7 @@ use App\Exceptions\TranscriptPolisherException;
 use App\Models\AudioChunk;
 use App\Models\CleanTranscriptChunk;
 use App\Services\BackgroundJobs\BackgroundJobDispatcher;
+use App\Services\Transcripts\CleanTranscriptChunkPresenter;
 use App\Services\Transcripts\TranscriptFurnishService;
 use App\Services\Transcripts\TranscriptPolisherService;
 use Illuminate\Http\JsonResponse;
@@ -22,6 +23,7 @@ class TranscriptFurnishController extends Controller
         Request $request,
         TranscriptPolisherService $polisher,
         TranscriptFurnishService $furnisher,
+        CleanTranscriptChunkPresenter $cleanedRows,
         BackgroundJobDispatcher $backgroundJobs,
     ): JsonResponse
     {
@@ -82,7 +84,7 @@ class TranscriptFurnishController extends Controller
             }
 
             try {
-                $cleaned = $this->furnishWindow($windowChunks, $polisher, $userId, $categoryName, $instructions, $instructionHash, $requestCount);
+                $cleaned = $this->furnishWindow($windowChunks, $polisher, $userId, $categoryName, $instructions, $instructionHash, $requestCount, $cleanedRows);
             } catch (TranscriptPolisherException $exception) {
                 return $this->furnishFailure($exception, $categoryName);
             }
@@ -111,7 +113,7 @@ class TranscriptFurnishController extends Controller
                 try {
                     array_push(
                         $cleaned,
-                        ...$this->furnishWindow($windowChunks, $polisher, $userId, $categoryName, $instructions, $instructionHash, $requestCount),
+                        ...$this->furnishWindow($windowChunks, $polisher, $userId, $categoryName, $instructions, $instructionHash, $requestCount, $cleanedRows),
                     );
                 } catch (TranscriptPolisherException $exception) {
                     return $this->furnishFailure($exception, $categoryName);
@@ -176,6 +178,7 @@ class TranscriptFurnishController extends Controller
         string $instructions,
         string $instructionHash,
         int &$requestCount,
+        CleanTranscriptChunkPresenter $cleanedRows,
     ): array {
         if ($this->windowHasText($windowChunks) && $requestCount > 0) {
             sleep(self::POLISH_REQUEST_INTERVAL_SECONDS);
@@ -213,7 +216,7 @@ class TranscriptFurnishController extends Controller
                 continue;
             }
 
-            CleanTranscriptChunk::query()->updateOrCreate(
+            $cleanedRow = CleanTranscriptChunk::query()->updateOrCreate(
                 ['audio_chunk_id' => $chunk->id],
                 [
                     'user_id' => $userId,
@@ -232,12 +235,7 @@ class TranscriptFurnishController extends Controller
                 ],
             );
 
-            $cleaned[] = $this->cleanedResponseRow($chunk, [
-                'text' => $cleanedChunk['text'],
-                'timestamps' => $cleanedChunk['timestamps'],
-                'provider' => $result['provider'] ?? null,
-                'model' => $result['model'] ?? null,
-            ]);
+            $cleaned[] = $cleanedRows->row($cleanedRow);
         }
 
         return $cleaned;
@@ -254,21 +252,6 @@ class TranscriptFurnishController extends Controller
         CleanTranscriptChunk::query()
             ->whereIn('audio_chunk_id', $ids)
             ->delete();
-    }
-
-    private function cleanedResponseRow($chunk, array $cleanedChunk): array
-    {
-        return [
-            'audio_chunk_id' => $chunk->id,
-            'clip_index' => (int) $chunk->clip_index,
-            'clip_start_ms' => (int) $chunk->clip_start_ms,
-            'clip_end_ms' => (int) $chunk->clip_end_ms,
-            'range_label' => $chunk->range_label,
-            'clean_text' => $cleanedChunk['text'],
-            'clean_timestamps' => $cleanedChunk['timestamps'],
-            'provider' => $cleanedChunk['provider'],
-            'model' => $cleanedChunk['model'],
-        ];
     }
 
     private function furnishFailure(TranscriptPolisherException $exception, string $categoryName): JsonResponse

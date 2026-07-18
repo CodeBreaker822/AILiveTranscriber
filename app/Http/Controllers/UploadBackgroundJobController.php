@@ -16,6 +16,7 @@ class UploadBackgroundJobController extends Controller
             'id' => $record['id'] ?? $job,
             'status' => $status,
             'message' => $record['message'] ?? null,
+            'progress' => $record['progress'] ?? null,
             'response' => $record['response'] ?? null,
             'http_status' => $record['http_status'] ?? null,
         ], $status === 'completed' ? 200 : 202);

@@ -348,6 +348,12 @@ fn ensure_runtime_storage(paths: &LaravelPaths) -> Result<(), String> {
         paths.storage_path.join("app").join("public"),
         paths
             .storage_path
+            .join("app")
+            .join("private")
+            .join("sherpa")
+            .join("models"),
+        paths
+            .storage_path
             .join("framework")
             .join("cache")
             .join("data"),
@@ -426,7 +432,12 @@ fn laravel_command(php_path: PathBuf, artisan_path: PathBuf, paths: &LaravelPath
         .join("whisper")
         .join("models");
     let whisper_model = whisper_model_directory.join(OFFLINE_WHISPER_MODEL);
-    let sherpa_model_directory = paths.project_dir.join("sherpa").join("models");
+    let sherpa_model_directory = paths
+        .storage_path
+        .join("app")
+        .join("private")
+        .join("sherpa")
+        .join("models");
     command
         .arg(artisan_path)
         .current_dir(&paths.project_dir)
@@ -1005,45 +1016,7 @@ fn open_external_url(url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn save_text_export(
-    app: tauri::AppHandle,
-    filename: Option<String>,
-    content: String,
-    default_extension: Option<String>,
-    filter_name: Option<String>,
-    filter_extensions: Option<Vec<String>>,
-) -> Result<Option<String>, String> {
-    save_export_content(
-        &app,
-        filename.as_deref(),
-        content,
-        default_extension.as_deref(),
-        filter_name.as_deref(),
-        filter_extensions.as_deref(),
-    )
-}
-
-#[tauri::command]
 fn save_text_export_with_dialog(
-    app: tauri::AppHandle,
-    filename: Option<String>,
-    content: String,
-    default_extension: Option<String>,
-    filter_name: Option<String>,
-    filter_extensions: Option<Vec<String>>,
-) -> Result<Option<String>, String> {
-    save_export_content(
-        &app,
-        filename.as_deref(),
-        content,
-        default_extension.as_deref(),
-        filter_name.as_deref(),
-        filter_extensions.as_deref(),
-    )
-}
-
-#[tauri::command]
-fn save_transcript_export_with_dialog(
     app: tauri::AppHandle,
     filename: Option<String>,
     content: String,
@@ -1237,6 +1210,12 @@ fn probe_audio_duration_ms(app: &tauri::AppHandle, path: &std::path::Path) -> Re
 }
 
 #[tauri::command]
+fn probe_audio_duration(app: tauri::AppHandle, path: String) -> Result<Option<u64>, String> {
+    let app_path = std::path::Path::new(&path);
+    probe_audio_duration_ms(&app, app_path).map(Some)
+}
+
+#[tauri::command]
 async fn check_app_update(
     app: tauri::AppHandle,
     pending: State<'_, PendingAppUpdate>,
@@ -1376,10 +1355,9 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             open_external_url,
-            save_text_export,
             save_text_export_with_dialog,
-            save_transcript_export_with_dialog,
             choose_audio_file,
+            probe_audio_duration,
             cancel_offline_whisper,
             check_app_update,
             install_update

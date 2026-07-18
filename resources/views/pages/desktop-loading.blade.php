@@ -111,6 +111,8 @@
                 'Almost ready',
             ];
             let attempts = 0;
+            const MIN_LOAD_TIME_MS = 1800;
+            const startTime = Date.now();
 
             const poll = async () => {
                 attempts += 1;
@@ -123,7 +125,12 @@
                     });
 
                     if (response.ok) {
-                        window.location.replace('{{ route('transcription.live') }}');
+                        const elapsed = Date.now() - startTime;
+                        const remaining = Math.max(0, MIN_LOAD_TIME_MS - elapsed);
+
+                        window.setTimeout(() => {
+                            window.location.replace('{{ route('transcription.live') }}');
+                        }, remaining);
                         return;
                     }
                 } catch (error) {

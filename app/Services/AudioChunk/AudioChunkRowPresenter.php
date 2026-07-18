@@ -3,13 +3,24 @@
 namespace App\Services\AudioChunk;
 
 use App\Models\AudioChunk;
+use App\Services\Transcripts\TranscriptDerivationService;
 
 class AudioChunkRowPresenter
 {
-    public function __construct(private readonly AudioChunkPayloadService $payloads) {}
+    public function __construct(
+        private readonly AudioChunkPayloadService $payloads,
+        private readonly TranscriptDerivationService $derivation,
+    ) {}
 
     public function row(AudioChunk $row): array
     {
+        $translatedText = $row->translated_text ?? null;
+        $timestamps = is_array($row->transcription_timestamps)
+            ? $row->transcription_timestamps
+            : [];
+
+        $parts = $this->derivation->exportParts($translatedText, $timestamps);
+
         return [
             'id' => $row->id,
             'clip_index' => (int) $row->clip_index,
@@ -22,10 +33,12 @@ class AudioChunkRowPresenter
             'status' => $row->status,
             'play_url' => route('audio-chunks.audio', ['audioChunk' => $row->id]),
             'delete_url' => route('audio-chunks.destroy', ['audioChunk' => $row->id]),
-            'translated_text' => $row->translated_text ?? null,
-            'transcription_timestamps' => is_array($row->transcription_timestamps)
-                ? $row->transcription_timestamps
-                : [],
+            'translated_text' => $translatedText,
+            'transcription_timestamps' => $timestamps,
+            'is_useful' => $this->derivation->isUsefulText($translatedText),
+            'display_text' => $parts['transcriptText'],
+            'speaker_turns' => $parts['turns'],
+            'speaker_labels' => $parts['speakerLabels'],
         ];
     }
 }

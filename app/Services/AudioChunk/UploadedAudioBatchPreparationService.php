@@ -26,6 +26,7 @@ class UploadedAudioBatchPreparationService
                 'upload_session_id' => $validated['upload_session_id'],
                 'user_id' => (int) ($validated['user_id'] ?? 1),
                 'category_name' => trim((string) $validated['category_name']),
+                'use_vad' => (bool) ($validated['use_vad'] ?? true),
                 ...$section,
             ]),
             $sections,

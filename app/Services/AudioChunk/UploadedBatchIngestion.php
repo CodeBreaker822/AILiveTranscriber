@@ -52,6 +52,7 @@ class UploadedBatchIngestion
         $userId = (int) ($validated['user_id'] ?? 1);
         $categoryName = trim((string) $validated['category_name']);
         $finalizeSession = (bool) ($validated['finalize_session'] ?? false);
+        $useDiarization = (bool) ($validated['use_diarization'] ?? true);
         $speakerSessionId = trim((string) ($validated['speaker_session_id'] ?? $validated['upload_session_id']));
         $cleanupFiles = [];
         $batch = [];
@@ -106,7 +107,7 @@ class UploadedBatchIngestion
             }
 
             if ($batch !== []) {
-                $queueOnlineDiarization = $this->speakerDiarization->canDiarize();
+                $queueOnlineDiarization = $useDiarization && $this->speakerDiarization->canDiarize();
                 $transcriptions = $this->speechToText->transcribeBatch($this->transcriptionBatchClips($batch), [
                     'language_code' => $validated['language_code'] ?? 'multi',
                     ...(isset($validated['transcription_engine']) ? ['engine' => $validated['transcription_engine']] : []),
@@ -211,7 +212,7 @@ class UploadedBatchIngestion
                     $finalizeSession && $audioChunkId === $lastQueuedId,
                 );
             });
-        } elseif ($finalizeSession && $retainedDiarizationAudio === []) {
+        } elseif ($finalizeSession && $useDiarization && $retainedDiarizationAudio === []) {
             $this->speakerDiarization->releaseSession($speakerSessionId);
         }
 

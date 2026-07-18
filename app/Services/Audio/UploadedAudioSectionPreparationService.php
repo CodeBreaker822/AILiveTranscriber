@@ -53,6 +53,7 @@ class UploadedAudioSectionPreparationService
             'clip_end_ms' => (int) $validated['clip_end_ms'],
             'range_label' => (string) $validated['range_label'],
             'duration_ms' => (int) $validated['duration_ms'],
+            'vad_driver' => ($validated['use_vad'] ?? true) ? null : 'disabled',
         ];
     }
 

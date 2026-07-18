@@ -93,6 +93,23 @@
                         </label>
                     </div>
 
+                    <div class="mt-2 grid grid-cols-2 gap-2">
+                        <label class="flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[0.7rem] font-semibold text-slate-100 transition hover:border-cyan-300/30 hover:bg-cyan-300/10">
+                            <input type="checkbox" data-use-vad checked class="h-4 w-4 rounded border-white/20 bg-slate-950 text-cyan-300 focus:ring-cyan-300/40">
+                            <span class="min-w-0">
+                                <span class="block truncate">Silero VAD</span>
+                                <span class="block truncate text-[0.62rem] font-normal text-slate-400">Speech filter</span>
+                            </span>
+                        </label>
+                        <label class="flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[0.7rem] font-semibold text-slate-100 transition hover:border-cyan-300/30 hover:bg-cyan-300/10">
+                            <input type="checkbox" data-use-diarization checked class="h-4 w-4 rounded border-white/20 bg-slate-950 text-cyan-300 focus:ring-cyan-300/40">
+                            <span class="min-w-0">
+                                <span class="block truncate">Sherpa Speakers</span>
+                                <span class="block truncate text-[0.62rem] font-normal text-slate-400">Speaker labels</span>
+                            </span>
+                        </label>
+                    </div>
+
                     <button
                         type="button"
                         data-record-toggle
@@ -120,6 +137,18 @@
                         </span>
                         <span class="text-[0.65rem] uppercase tracking-[0.18em] text-slate-400">Live</span>
                     </button>
+
+                    <div class="mt-2 flex flex-nowrap items-center gap-1">
+                        <button type="button" data-live-continue disabled class="inline-flex min-h-7 flex-1 cursor-pointer items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] px-1.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-white transition hover:border-cyan-300/30 hover:bg-cyan-300/10 disabled:cursor-not-allowed disabled:opacity-50">
+                            Continue
+                        </button>
+                        <button type="button" data-live-retry disabled class="inline-flex min-h-7 flex-1 cursor-pointer items-center justify-center rounded-lg border border-amber-300/20 bg-amber-300/10 px-1.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-amber-100 transition hover:border-amber-300/30 hover:bg-amber-300/15 disabled:cursor-not-allowed disabled:opacity-50">
+                            Retry
+                        </button>
+                        <button type="button" data-live-cancel disabled class="inline-flex min-h-7 flex-1 cursor-pointer items-center justify-center rounded-lg border border-rose-400/20 bg-rose-400/10 px-1.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-rose-100 transition hover:border-rose-400/30 hover:bg-rose-400/15 disabled:cursor-not-allowed disabled:opacity-50">
+                            Cancel
+                        </button>
+                    </div>
                 </section>
 
                 <section class="relative z-0 shrink-0 rounded-lg border border-white/10 bg-slate-950/70 p-2.5 shadow-[0_18px_60px_rgba(0,0,0,0.32)] backdrop-blur-xl">
@@ -141,17 +170,6 @@
                             <div data-audio-progress class="h-full w-0 rounded-full bg-gradient-to-r from-cyan-400 via-emerald-300 to-amber-300 transition-[width] duration-150"></div>
                         </div>
                         <p data-audio-support class="mt-1 text-[0.66rem] uppercase tracking-[0.16em] text-slate-500">Ready</p>
-                        <div class="mt-1.5 flex flex-nowrap items-center gap-1">
-                            <button type="button" data-live-continue disabled class="inline-flex min-h-7 flex-1 cursor-pointer items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] px-1.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-white transition hover:border-cyan-300/30 hover:bg-cyan-300/10 disabled:cursor-not-allowed disabled:opacity-50">
-                                Continue
-                            </button>
-                            <button type="button" data-live-retry disabled class="inline-flex min-h-7 flex-1 cursor-pointer items-center justify-center rounded-lg border border-amber-300/20 bg-amber-300/10 px-1.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-amber-100 transition hover:border-amber-300/30 hover:bg-amber-300/15 disabled:cursor-not-allowed disabled:opacity-50">
-                                Retry
-                            </button>
-                            <button type="button" data-live-cancel disabled class="inline-flex min-h-7 flex-1 cursor-pointer items-center justify-center rounded-lg border border-rose-400/20 bg-rose-400/10 px-1.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-rose-100 transition hover:border-rose-400/30 hover:bg-rose-400/15 disabled:cursor-not-allowed disabled:opacity-50">
-                                Cancel
-                            </button>
-                        </div>
                     </div>
                 </section>
 
@@ -170,6 +188,7 @@
                         </div>
                         <p data-live-cleaner-progress-note class="mt-1 text-[0.66rem] leading-4 text-slate-400">Record or load a raw transcript before polishing.</p>
                     </div>
+
                 </section>
             </aside>
         </div>

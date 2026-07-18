@@ -71,6 +71,8 @@ class AudioChunkController extends Controller
                 'speaker_session_id' => ['nullable', 'string', 'max:120', 'regex:/^[A-Za-z0-9._:-]+$/'],
                 'progress_id' => ['nullable', 'string', 'max:120', 'regex:/^[A-Za-z0-9._:-]+$/'],
                 'finalize_session' => ['nullable', 'boolean'],
+                'use_vad' => ['nullable', 'boolean'],
+                'use_diarization' => ['nullable', 'boolean'],
             ])),
         );
     }
@@ -92,6 +94,7 @@ class AudioChunkController extends Controller
             'range_label' => ['required', 'string', 'max:32'],
             'duration_ms' => ['required', 'integer', 'min:1'],
             'speaker_session_id' => ['nullable', 'string', 'max:120', 'regex:/^[A-Za-z0-9._:-]+$/'],
+            'use_vad' => ['nullable', 'boolean'],
         ]);
 
         if ($backgroundJobs->wantsBackgroundJob($request)) {
@@ -140,6 +143,7 @@ class AudioChunkController extends Controller
             'category_name' => ['required', 'string', 'max:120'],
             'concurrency' => ['nullable', 'integer', 'min:1', 'max:64'],
             'speaker_session_id' => ['nullable', 'string', 'max:120', 'regex:/^[A-Za-z0-9._:-]+$/'],
+            'use_vad' => ['nullable', 'boolean'],
             'sections' => ['required', 'array', 'min:1'],
             'sections.*.clip_index' => ['required', 'integer', 'min:1'],
             'sections.*.clip_start_ms' => ['required', 'integer', 'min:0'],
@@ -214,6 +218,8 @@ class AudioChunkController extends Controller
             'speaker_session_id' => ['nullable', 'string', 'max:120', 'regex:/^[A-Za-z0-9._:-]+$/'],
             'progress_id' => ['nullable', 'string', 'max:120', 'regex:/^[A-Za-z0-9._:-]+$/'],
             'finalize_session' => ['nullable', 'boolean'],
+            'use_vad' => ['nullable', 'boolean'],
+            'use_diarization' => ['nullable', 'boolean'],
             'sections' => ['required', 'array', 'min:1', 'max:20'],
             'sections.*.clip_index' => ['required', 'integer', 'min:1'],
             'sections.*.clip_start_ms' => ['required', 'integer', 'min:0'],
@@ -292,6 +298,8 @@ class AudioChunkController extends Controller
             'speaker_session_id' => ['nullable', 'string', 'max:120', 'regex:/^[A-Za-z0-9._:-]+$/'],
             'progress_id' => ['nullable', 'string', 'max:120', 'regex:/^[A-Za-z0-9._:-]+$/'],
             'finalize_session' => ['nullable', 'boolean'],
+            'use_vad' => ['nullable', 'boolean'],
+            'use_diarization' => ['nullable', 'boolean'],
             'prepared_name' => ['nullable', 'string', 'regex:/^chunk_\d+(?:-speech)?\.wav$/i'],
             'source_name' => ['nullable', 'string', 'regex:/^chunk_\d+\.wav$/i'],
             'prepared_skipped' => ['nullable', 'boolean'],

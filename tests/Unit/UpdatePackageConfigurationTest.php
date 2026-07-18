@@ -50,16 +50,21 @@ class UpdatePackageConfigurationTest extends TestCase
     {
         $readme = file_get_contents(dirname(__DIR__, 2).'/release/AITranscriberAPP/README.template.md');
 
+        $this->assertStringContainsString('## Meeting Transcription App For Windows', $readme);
+        $this->assertStringContainsString('Current version: `{{APP_VERSION}}`', $readme);
+        $this->assertStringContainsString('## Download ASTRA', $readme);
         $this->assertStringContainsString('Click the `updates` folder.', $readme);
         $this->assertStringContainsString('Open the newest version folder', $readme);
         $this->assertStringContainsString('{{UPDATE_FOLDER}}', $readme);
-        $this->assertStringContainsString('click **Download raw file**', $readme);
+        $this->assertStringContainsString('Click **Download raw file**', $readme);
         $this->assertStringContainsString('Do not use GitHub\'s **Code > Download ZIP** button', $readme);
         $this->assertStringContainsString('{{INSTALLER_FILE}}', $readme);
-        $this->assertStringContainsString('{{APP_VERSION}}', $readme);
-        $this->assertStringContainsString('checks this repository for signed updates automatically', $readme);
-        $this->assertStringContainsString('This repository is the public app update channel', $readme);
+        $this->assertStringContainsString('future updates are checked automatically by the app', $readme);
         $this->assertStringContainsString('currently maintained by one developer', $readme);
+        $this->assertStringNotContainsString('Tauri', $readme);
+        $this->assertStringNotContainsString('Laravel', $readme);
+        $this->assertStringNotContainsString('public app update channel', $readme);
+        $this->assertStringNotContainsString('private development source', $readme);
         $this->assertStringNotContainsString('Developer work stays in the private development repository', $readme);
     }
 

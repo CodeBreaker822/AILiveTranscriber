@@ -119,6 +119,7 @@
             data-stored-url="{{ route('audio-chunks.index') }}"
             data-vad-log-url="{{ route('audio-vad-logs.index') }}"
             data-furnish-url="{{ route('transcripts.furnish') }}"
+            data-export-url="{{ route('transcripts.export') }}"
             data-default-user-id="1"
             data-default-category-name=""
             data-play-url-base="{{ url('/audio-chunks') }}"
@@ -137,6 +138,7 @@
             data-stored-url="{{ route('audio-chunks.index') }}"
             data-vad-log-url="{{ route('audio-vad-logs.index') }}"
             data-furnish-url="{{ route('transcripts.furnish') }}"
+            data-export-url="{{ route('transcripts.export') }}"
             data-default-user-id="1"
         @endif
         class="h-[100dvh] overflow-hidden bg-[linear-gradient(180deg,_#071018_0%,_#0d1620_42%,_#101820_100%)] font-sans text-slate-100 selection:bg-cyan-300/20 selection:text-white"

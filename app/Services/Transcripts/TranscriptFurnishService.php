@@ -5,10 +5,14 @@ namespace App\Services\Transcripts;
 use App\Exceptions\TranscriptPolisherException;
 use App\Models\AudioChunk;
 use App\Models\CleanTranscriptChunk;
+use App\Services\Transcripts\CleanTranscriptChunkPresenter;
 
 class TranscriptFurnishService
 {
-    public function __construct(private readonly TranscriptPolisherService $polisher) {}
+    public function __construct(
+        private readonly TranscriptPolisherService $polisher,
+        private readonly CleanTranscriptChunkPresenter $cleanedRows,
+    ) {}
 
     /**
      * @param  array<int, int>  $audioChunkIds
@@ -103,7 +107,7 @@ class TranscriptFurnishService
                 continue;
             }
 
-            CleanTranscriptChunk::query()->updateOrCreate(
+            $cleanedRow = CleanTranscriptChunk::query()->updateOrCreate(
                 ['audio_chunk_id' => $chunk->id],
                 [
                     'user_id' => $userId,
@@ -122,17 +126,7 @@ class TranscriptFurnishService
                 ],
             );
 
-            $cleaned[] = [
-                'audio_chunk_id' => $chunk->id,
-                'clip_index' => (int) $chunk->clip_index,
-                'clip_start_ms' => (int) $chunk->clip_start_ms,
-                'clip_end_ms' => (int) $chunk->clip_end_ms,
-                'range_label' => $chunk->range_label,
-                'clean_text' => $cleanedChunk['text'],
-                'clean_timestamps' => $cleanedChunk['timestamps'],
-                'provider' => $result['provider'] ?? null,
-                'model' => $result['model'] ?? null,
-            ];
+            $cleaned[] = $this->cleanedRows->row($cleanedRow);
         }
 
         return $cleaned;

@@ -31,6 +31,10 @@ class TranscriptPolishInterfaceTest extends TestCase
                 ->assertSee('Polishing again removes the current polished transcript and replaces it with the new result.')
                 ->assertSee('Project Name')
                 ->assertSee('Language')
+                ->assertSee('data-use-vad', false)
+                ->assertSee('data-use-diarization', false)
+                ->assertSee('Silero VAD')
+                ->assertSee('Sherpa Speakers')
                 ->assertSee('Multilingual')
                 ->assertSee('AILogo.png')
                 ->assertSee('Adaptive Speech Transcription and Recording Assistant. All rights reserved.')
@@ -53,10 +57,17 @@ class TranscriptPolishInterfaceTest extends TestCase
                 $response->assertSee('data-language-input', false);
                 $this->assertSame(1, substr_count($html, 'data-stored-list'));
                 $this->assertSame(1, substr_count($html, 'data-audio-queue'));
+                $this->assertSame(1, substr_count($html, 'data-use-vad'));
+                $this->assertSame(1, substr_count($html, 'data-use-diarization'));
                 $this->assertSame(1, substr_count($html, 'data-furnish-live'));
                 $this->assertSame(1, substr_count($html, 'data-summarize="live"'));
                 $this->assertSame(1, substr_count($html, 'data-live-cleaner-state'));
                 $this->assertSame(1, substr_count($html, 'data-live-cleaner-progress-bar'));
+                $this->assertLessThan(
+                    strpos($html, 'data-live-cleaner-progress-note'),
+                    strpos($html, 'data-live-continue'),
+                    'Live queue controls should stay in the top control container.',
+                );
                 $this->assertSame(0, substr_count($html, 'data-upload-transcript-list'));
                 continue;
             }
@@ -69,12 +80,19 @@ class TranscriptPolishInterfaceTest extends TestCase
             $response->assertSee('data-upload-language', false);
             $this->assertSame(1, substr_count($html, 'data-upload-transcript-list'));
             $this->assertSame(1, substr_count($html, 'data-upload-queue-list'));
+            $this->assertSame(1, substr_count($html, 'data-use-vad'));
+            $this->assertSame(1, substr_count($html, 'data-use-diarization'));
             $this->assertSame(1, substr_count($html, 'data-furnish-upload'));
             $this->assertSame(1, substr_count($html, 'data-summarize="upload"'));
             $this->assertSame(1, substr_count($html, 'data-upload-duration'));
             $this->assertSame(0, substr_count($html, 'data-upload-sections'));
             $this->assertSame(1, substr_count($html, 'data-upload-status'));
             $this->assertSame(1, substr_count($html, 'data-upload-pause'));
+            $this->assertLessThan(
+                strpos($html, 'data-upload-status'),
+                strpos($html, 'data-upload-queue'),
+                'Upload queue controls should stay above the progress loader container.',
+            );
             $this->assertSame(0, substr_count($html, 'data-stored-list'));
             $this->assertStringNotContainsString('parked', $html);
             $this->assertStringNotContainsString('Section processing', $html);

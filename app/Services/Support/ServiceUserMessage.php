@@ -73,4 +73,18 @@ class ServiceUserMessage
     {
         return "The selected {$provider} transcription model is not available. Please reopen Settings and try again.";
     }
+
+    public static function noRawTranscript(string $categoryName = ''): string
+    {
+        $scope = $categoryName !== '' ? " for \"{$categoryName}\"" : '';
+
+        return "No raw transcription is ready to export{$scope}.";
+    }
+
+    public static function noCleanedTranscript(string $categoryName = ''): string
+    {
+        $scope = $categoryName !== '' ? " for \"{$categoryName}\"" : '';
+
+        return "Polish the transcript before exporting the cleaned version{$scope}.";
+    }
 }

@@ -29,6 +29,7 @@ class UploadedSectionIngestion
         @set_time_limit(0);
 
         $finalizeSession = (bool) ($validated['finalize_session'] ?? false);
+        $useDiarization = (bool) ($validated['use_diarization'] ?? true);
         $speakerSessionId = trim((string) ($validated['speaker_session_id'] ?? $validated['upload_session_id']));
         $segment = null;
         $transcriptionAudio = null;
@@ -86,7 +87,7 @@ class UploadedSectionIngestion
                 ...(isset($validated['progress_id']) ? ['progress_id' => $validated['progress_id']] : []),
                 'release_worker' => $finalizeSession,
             ]);
-            if ((int) ($validated['audio_chunk_id'] ?? 0) <= 0) {
+            if ($useDiarization && (int) ($validated['audio_chunk_id'] ?? 0) <= 0) {
                 $transcription = $this->speakerDiarization->apply($transcriptionAudio['path'], $transcription, [
                     'clip_start_ms' => (int) $validated['clip_start_ms'],
                     'speaker_session_id' => $speakerSessionId,
@@ -172,7 +173,7 @@ class UploadedSectionIngestion
                 $transcriptionAudio,
             );
         }
-        if ($finalizeSession) {
+        if ($finalizeSession && $useDiarization) {
             $this->speakerDiarization->releaseSession($speakerSessionId);
         }
 
@@ -206,7 +207,9 @@ class UploadedSectionIngestion
         $this->speechToText->releaseOfflineWorker([
             'engine' => $validated['transcription_engine'] ?? TranscriptionEngine::Online->value,
         ]);
-        $this->speakerDiarization->releaseSession($speakerSessionId);
+        if (($validated['use_diarization'] ?? true)) {
+            $this->speakerDiarization->releaseSession($speakerSessionId);
+        }
     }
 
     private function cleanupUploadedSectionFiles(

@@ -44,6 +44,14 @@ class BackgroundJobStore
         $this->patch($id, ['status' => 'running', 'started_at' => now()->toISOString()]);
     }
 
+    /**
+     * @param  array{phase: string, percent: int, section_index: int, section_total: int}  $progress
+     */
+    public function markProgress(string $id, array $progress): void
+    {
+        $this->patch($id, ['progress' => $progress]);
+    }
+
     public function markCompleted(string $id, array $response, int $httpStatus = 200): void
     {
         $this->patch($id, [

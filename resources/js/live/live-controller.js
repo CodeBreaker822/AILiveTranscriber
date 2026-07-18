@@ -1,14 +1,10 @@
 import { buildDeleteErrorMessage, buildStorageLoadErrorMessage, buildUploadErrorMessage } from '../shared/api-errors.js';
 import { escapeHtml, notify, notifyError, readNearbyControlValue, withButtonLoading } from '../shared/dom.js';
 import { exportTranscriptRows } from '../shared/export-service.js';
-import { formatClipRange, formatClock, formatRelativeClock, slugify, sortByTimeAscending } from '../shared/formatters.js';
+import { formatClipRange, formatClock, formatRelativeClock, sortByTimeAscending } from '../shared/formatters.js';
 import { clampProgressPercent, createPhaseProgress, phaseProgressAverage, phaseProgressSummary } from '../shared/progress.js';
-import { buildCleanerBatches, countCleanerBatches } from '../shared/cleaner-batches.js';
 import { normalizeStoredItem } from '../shared/normalize.js';
 import {
-    buildExportRows,
-    hasUsefulTranscript,
-    isUsefulTranscriptText,
     renderTranscriptText,
 } from '../shared/transcripts.js';
 import { createLiveWorkflowState } from './live-state.js';
@@ -45,6 +41,8 @@ export const initLivePage = (context) => {
     const $categoryInput = $('[data-category-input]');
     const $categorySuggestions = $('[data-category-suggestions]');
     const $languageInput = $('[data-language-input]');
+    const $useVad = $('[data-use-vad]');
+    const $useDiarization = $('[data-use-diarization]');
     const $currentCategory = $('[data-current-category]');
     const $activeName = $('[data-audio-active-name]');
     const $activeNote = $('[data-audio-active-note]');
@@ -62,6 +60,7 @@ export const initLivePage = (context) => {
     const uploadUrl = String($body.data('upload-url') || '');
     const storedUrl = String($body.data('stored-url') || '');
     const vadLogUrl = String($body.data('vad-log-url') || '');
+    const exportUrl = String($body.attr('data-export-url') || '');
     const playUrlBase = String($body.data('play-url-base') || '');
     const deleteUrlBase = String($body.data('delete-url-base') || '');
     const defaultUserId = Number($body.data('default-user-id') || 1);
@@ -91,13 +90,16 @@ export const initLivePage = (context) => {
         ...pollOptions,
     });
 
-    const hasUsefulStoredTranscript = hasUsefulTranscript;
+    const hasUsefulStoredTranscript = (item) => item?.is_useful === true
+        || String(item?.translatedText || item?.translated_text || '').trim() !== '';
 
     const getCategoryName = () => String($categoryInput.val() || liveState.activeCategoryName || liveState.categoryName || '').trim();
 
     const getLanguageCode = () => getTranscriptionEngine() === 'offline'
         ? 'auto'
         : String($languageInput.val() || 'multi').trim() || 'multi';
+    const shouldUseVad = () => $useVad.length === 0 || $useVad.prop('checked');
+    const shouldUseDiarization = () => $useDiarization.length === 0 || $useDiarization.prop('checked');
 
     const normalizeStoredTranscriptItem = (item) => normalizeStoredItem(item, {
         playUrlBase,
@@ -157,7 +159,8 @@ export const initLivePage = (context) => {
         const items = (useCleaned
             ? (cleanedPayload.categoryName === selectedCategory ? cleanedPayload.items || [] : [])
             : getStoredItemsForCategory())
-            .filter((item) => hasUsefulTranscriptText(item.cleanText || item.clean_text || item.translatedText || item.translated_text || item.text || ''))
+            .filter((item) => item.is_useful !== false
+                && String(item.cleanText || item.clean_text || item.translatedText || item.translated_text || item.text || '').trim() !== '')
             .slice()
             .sort(sortByTimeAscending);
 
@@ -168,20 +171,16 @@ export const initLivePage = (context) => {
             return;
         }
 
-        const rows = buildExportRows(items, useCleaned);
-
-        if (!rows.length) {
-            notifyError('No useful transcript text is ready to export yet.');
-            return;
+        try {
+            await withButtonLoading($(event?.currentTarget || []), () => exportTranscriptRows({
+                exportUrl,
+                categoryName: selectedCategory,
+                mode: useCleaned ? 'clean' : 'raw',
+                format: exportFormat,
+            }));
+        } catch (error) {
+            notifyError(String(error?.message || error || 'No transcription is ready to export yet.'));
         }
-
-        await withButtonLoading($(event?.currentTarget || []), () => exportTranscriptRows({
-            rows,
-            format: exportFormat,
-            filenameBase: `${slugify(selectedCategory)}-${useCleaned ? 'cleaned' : 'raw'}-transcription`,
-            title: selectedCategory || 'Live transcription',
-            variantLabel: useCleaned ? 'Cleaned' : 'Raw',
-        }));
     };
 
     const renderVadLogs = (logs, categoryName) => {
@@ -300,6 +299,10 @@ export const initLivePage = (context) => {
                 rangeLabel: row.range_label || '',
                 cleanText: row.clean_text || '',
                 cleanTimestamps: row.clean_timestamps || [],
+                is_useful: row.is_useful ?? (String(row.clean_text || '').trim() !== ''),
+                displayText: row.display_text ?? (String(row.clean_text || '').trim()),
+                speakerTurns: Array.isArray(row.speaker_turns) ? row.speaker_turns : [],
+                speakerLabels: Array.isArray(row.speaker_labels) ? row.speaker_labels : [],
             });
         });
 
@@ -347,35 +350,35 @@ export const initLivePage = (context) => {
         updateLiveCleanerProgress();
 
         try {
-            const batches = buildCleanerBatches(getStoredItemsForCategory());
+            const chunkIds = getStoredItemsForCategory()
+                .map((item) => Number(item.id || item.audioChunkId || item.audio_chunk_id || 0))
+                .filter((id) => id > 0);
 
-            for (let batchIndex = 0; batchIndex < batches.length; batchIndex += 1) {
-                const batch = batches[batchIndex];
-                const response = await backgroundAjax({
-                    url: furnishUrl,
-                    method: 'POST',
-                    data: {
-                        user_id: defaultUserId,
-                        category_name: categoryName,
-                        audio_chunk_ids: batch.audioChunkIds,
-                        instructions,
-                    },
-                }, {
-                    timeoutMs: 600000,
-                    intervalMs: 900,
-                });
-                const rows = Array.isArray(response?.data) ? response.data : [];
-
-                mergeLiveCleanedRows(categoryName, rows);
-                liveState.liveCleanerCompletedSections = batchIndex + 1;
+            if (!chunkIds.length) {
+                liveState.liveCleanerStatus = 'Complete';
                 updateLiveCleanerProgress();
                 renderStoredList();
-
-                if (batchIndex < batches.length - 1) {
-                    await pause(4000);
-                }
+                notify('Transcript polished.');
+                return;
             }
 
+            const response = await backgroundAjax({
+                url: furnishUrl,
+                method: 'POST',
+                data: {
+                    user_id: defaultUserId,
+                    category_name: categoryName,
+                    audio_chunk_ids: chunkIds,
+                    instructions,
+                },
+            }, {
+                timeoutMs: 600000,
+                intervalMs: 900,
+            });
+            const rows = Array.isArray(response?.data) ? response.data : [];
+
+            mergeLiveCleanedRows(categoryName, rows);
+            liveState.liveCleanerCompletedSections = chunkIds.length;
             liveState.liveCleanerStatus = 'Complete';
             updateLiveCleanerProgress();
             renderStoredList();
@@ -429,7 +432,7 @@ export const initLivePage = (context) => {
             .sort(sortByTimeAscending);
     };
 
-    const getLiveCleanerBatchCount = () => countCleanerBatches(getStoredItemsForCategory());
+    const getLiveCleanerBatchCount = () => getStoredItemsForCategory().length;
 
     const updateLiveCleanerProgress = () => {
         const total = getLiveCleanerBatchCount();
@@ -655,21 +658,21 @@ export const initLivePage = (context) => {
         $row.find('[data-item-progress-label]').text(`${formatClock(currentMs)} / ${formatClock(safeDuration)}`);
     };
 
-    const getLivePhaseDefinitions = (transcribeLabel = 'Server') => [
+    const getLivePhaseDefinitions = (transcribeLabel = 'Server', item = {}) => [
         { key: 'prepare', label: 'Prepare' },
-        { key: 'silero', label: 'Silero' },
+        ...(item.useVad === false ? [] : [{ key: 'silero', label: 'Silero' }]),
         { key: 'transcribe', label: transcribeLabel },
-        { key: 'sherpa', label: 'Sherpa' },
+        ...(item.useDiarization === false ? [] : [{ key: 'sherpa', label: 'Sherpa' }]),
     ];
 
-    const livePhaseAverage = (phases, transcribeLabel = 'Server') => phaseProgressAverage(
+    const livePhaseAverage = (phases, transcribeLabel = 'Server', item = {}) => phaseProgressAverage(
         phases,
-        getLivePhaseDefinitions(transcribeLabel),
+        getLivePhaseDefinitions(transcribeLabel, item),
     );
 
-    const livePhaseSummary = (phases, transcribeLabel = 'Server') => phaseProgressSummary(
+    const livePhaseSummary = (phases, transcribeLabel = 'Server', item = {}) => phaseProgressSummary(
         phases,
-        getLivePhaseDefinitions(transcribeLabel),
+        getLivePhaseDefinitions(transcribeLabel, item),
     );
 
     const updateLivePhaseProgress = (itemId, updates = {}, activeLabel = '') => {
@@ -689,8 +692,8 @@ export const initLivePage = (context) => {
         liveState.activeLivePhaseProgress = item.phaseProgress;
 
         const transcribeLabel = item.transcriptionEngine === 'offline' ? 'Whisper' : 'Server';
-        const percent = livePhaseAverage(item.phaseProgress);
-        const summary = livePhaseSummary(item.phaseProgress, transcribeLabel);
+        const percent = livePhaseAverage(item.phaseProgress, transcribeLabel, item);
+        const summary = livePhaseSummary(item.phaseProgress, transcribeLabel, item);
         const label = activeLabel || summary;
         const $row = $queue.find(`[data-queue-item="${itemId}"]`);
 
@@ -738,30 +741,35 @@ export const initLivePage = (context) => {
             if ((next.prepare || 0) < 95) {
                 next.prepare = Math.min(95, Number(next.prepare || 0) + 8);
                 label = 'Prepare';
-            } else if ((next.silero || 0) < 95) {
+            } else if (item.useVad !== false && (next.silero || 0) < 95) {
                 next.prepare = 100;
                 next.silero = Math.min(95, Number(next.silero || 0) + 5);
                 label = 'Silero';
             } else if ((next.transcribe || 0) < 95) {
-                next.silero = 100;
+                next.silero = item.useVad === false ? 0 : 100;
                 next.transcribe = Math.min(95, Number(next.transcribe || 0) + (item.transcriptionEngine === 'offline' ? 1 : 3));
                 label = item.transcriptionEngine === 'offline' ? 'Whisper' : 'Server';
-            } else if ((next.sherpa || 0) < 90) {
+            } else if (item.useDiarization !== false && (next.sherpa || 0) < 90) {
                 next.transcribe = 100;
                 next.sherpa = Math.min(90, Number(next.sherpa || 0) + 2);
                 label = 'Sherpa';
             } else {
-                label = 'Sherpa';
+                label = item.useDiarization === false ? 'Complete' : 'Sherpa';
             }
 
-            updateLivePhaseProgress(item.id, next, `${label} ${livePhaseAverage(next)}%`);
+            updateLivePhaseProgress(
+                item.id,
+                next,
+                `${label} ${livePhaseAverage(next, item.transcriptionEngine === 'offline' ? 'Whisper' : 'Server', item)}%`,
+            );
         }, 450);
     };
 
     const updateQueueItemTranscriptionProgress = (itemId, whisperPercent) => {
+        const item = liveState.queuedItems.find((entry) => entry.id === itemId) || {};
         updateLivePhaseProgress(itemId, {
             prepare: 100,
-            silero: 100,
+            silero: item.useVad === false ? 0 : 100,
             transcribe: Math.max(0, Math.min(100, Number(whisperPercent || 0))),
         }, `Whisper ${Math.round(whisperPercent)}%`);
     };
@@ -798,7 +806,8 @@ export const initLivePage = (context) => {
         const items = useCleaned
             ? (cleanedPayload.categoryName === selectedCategory
                 ? (cleanedPayload.items || [])
-                    .filter((item) => hasUsefulTranscriptText(item.cleanText || item.clean_text || ''))
+                    .filter((item) => item.is_useful !== false
+                        && String(item.cleanText || item.clean_text || '').trim() !== '')
                     .sort(sortByTimeAscending)
                 : [])
             : rawItems;
@@ -809,12 +818,6 @@ export const initLivePage = (context) => {
         const html = items
             .map((item) => {
                 const rangeLabel = item.rangeLabel || item.range_label || '';
-                const translatedText = useCleaned
-                    ? item.cleanText || item.clean_text || ''
-                    : item.translatedText || item.translated_text || '';
-                const transcriptTimestamps = useCleaned
-                    ? (item.cleanTimestamps || item.clean_timestamps || [])
-                    : (item.timestamps || item.transcription_timestamps || []);
                 return `
                     <article data-stored-item="${item.id}" class="w-full border-b border-white/8 py-2.5 last:border-b-0">
                         <div class="flex w-full flex-col gap-2.5 md:flex-row md:items-start md:gap-4">
@@ -853,7 +856,7 @@ export const initLivePage = (context) => {
                             </div>
 
                             <div class="min-w-0 flex-1">
-                                ${renderTranscriptText(translatedText, transcriptTimestamps)}
+                                ${renderTranscriptText(item)}
                             </div>
                         </div>
                     </article>
@@ -986,6 +989,8 @@ export const initLivePage = (context) => {
         formData.append('transcription_engine', transcriptionEngine);
         formData.append('whisper_model', getWhisperModel());
         formData.append('speaker_session_id', nextItem.speakerSessionId || '');
+        formData.append('use_vad', nextItem.useVad === false ? '0' : '1');
+        formData.append('use_diarization', nextItem.useDiarization === false ? '0' : '1');
         formData.append('finalize_session', nextItem.finalizeSession ? '1' : '0');
         if (progressId) {
             formData.append('progress_id', progressId);
@@ -1012,7 +1017,7 @@ export const initLivePage = (context) => {
                         }, `Prepare ${Math.round(livePhaseAverage({
                             ...(nextItem.phaseProgress || {}),
                             prepare: percent,
-                        }))}%`);
+                        }, nextItem.transcriptionEngine === 'offline' ? 'Whisper' : 'Server', nextItem))}%`);
                     });
                 }
 
@@ -1022,9 +1027,9 @@ export const initLivePage = (context) => {
                 const responseData = response?.data || {};
                 updateLivePhaseProgress(nextItem.id, {
                     prepare: 100,
-                    silero: 100,
+                    silero: nextItem.useVad === false ? 0 : 100,
                     transcribe: 100,
-                    sherpa: 100,
+                    sherpa: nextItem.useDiarization === false ? 0 : 100,
                 }, 'Complete 100%');
                 rememberLiveTimelineCursor(
                     nextItem.categoryName || liveState.activeCategoryName || getCategoryName(),
@@ -1408,7 +1413,11 @@ export const initLivePage = (context) => {
         const clipEndMs = clipStartMs + durationMs;
         const categoryName = liveState.activeCategoryName || getCategoryName();
         const languageCode = getLanguageCode();
-        const speakerSessionId = liveState.activeSpeakerSessionId || createSpeakerSessionId();
+        const useVad = shouldUseVad();
+        const useDiarization = shouldUseDiarization();
+        const speakerSessionId = useDiarization
+            ? (liveState.activeSpeakerSessionId || createSpeakerSessionId())
+            : '';
         const finalizeSession = !liveState.isRecording;
 
         liveState.queuedItems.push({
@@ -1423,11 +1432,13 @@ export const initLivePage = (context) => {
             categoryName,
             languageCode,
             speakerSessionId,
+            useVad,
+            useDiarization,
             finalizeSession,
             uploadState: 'waiting',
         });
 
-        if (finalizeSession) {
+        if (finalizeSession && useDiarization) {
             liveState.activeSpeakerSessionId = '';
         }
 

@@ -18,6 +18,9 @@
                 <button type="button" data-polish-preset="translate-en" aria-pressed="false" class="min-h-9 cursor-pointer rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-cyan-300/30 hover:bg-cyan-300/10 hover:text-white">
                     Translate (EN)
                 </button>
+                <button type="button" data-polish-preset="translate-fil" aria-pressed="false" class="min-h-9 cursor-pointer rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-cyan-300/30 hover:bg-cyan-300/10 hover:text-white">
+                    Translate (Filipino)
+                </button>
                 <button type="button" data-polish-preset="fix-grammar" aria-pressed="false" class="min-h-9 cursor-pointer rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-cyan-300/30 hover:bg-cyan-300/10 hover:text-white">
                     Fix Grammar
                 </button>
@@ -33,6 +36,7 @@
                 class="mt-2 w-full resize-y rounded-lg border border-white/10 bg-slate-900 px-4 py-3 text-sm leading-6 text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-300/20"
                 placeholder="Example: Translate Cebuano, Bisaya, Filipino, and code-switched speech into polished English while preserving names, offices, acronyms, titles, numbers, and meaning."
             ></textarea>
+            <p class="mt-1 text-xs text-slate-400">Tip: Be specific. Include source languages, target language, and what to preserve (names, numbers, etc.).</p>
         </label>
         <p data-polish-instructions-error class="mt-2 hidden text-sm text-rose-300">Enter instructions before polishing.</p>
         <p data-polish-replace-warning class="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-sm leading-6 text-amber-100">
