@@ -120,3 +120,164 @@ html[data-ui-page='settings'] [data-settings-workspace] > section {
         min-height: 32rem;
     }
 }
+
+/* Beta ChatGPT-style transcription workspace. Existing controllers still render
+   some legacy utility classes, so keep these overrides scoped to the template. */
+[data-transcription-chat-template] [data-category-pick],
+[data-transcription-chat-template] [data-upload-category-pick],
+[data-transcription-chat-template] [data-chat-project-pick] {
+    color: #0f172a;
+}
+
+[data-transcription-chat-template] [data-category-pick]:hover,
+[data-transcription-chat-template] [data-upload-category-pick]:hover,
+[data-transcription-chat-template] [data-chat-project-pick]:hover {
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+[data-transcription-chat-template] [data-chat-conversation-list] {
+    scrollbar-color: #2563eb #eff6ff;
+    scrollbar-width: thin;
+}
+
+[data-transcription-chat-template] [data-chat-conversation-list]::-webkit-scrollbar {
+    width: 0.625rem;
+}
+
+[data-transcription-chat-template] [data-chat-conversation-list]::-webkit-scrollbar-track {
+    border-radius: 999px;
+    background: #eff6ff;
+}
+
+[data-transcription-chat-template] [data-chat-conversation-list]::-webkit-scrollbar-thumb {
+    border: 0.125rem solid #eff6ff;
+    border-radius: 999px;
+    background: #2563eb;
+}
+
+[data-transcription-chat-template] [data-chat-conversation-list]::-webkit-scrollbar-thumb:hover {
+    background: #1d4ed8;
+}
+
+[data-transcription-chat-template] [data-stored-list] [data-stored-empty] p,
+[data-transcription-chat-template] [data-upload-transcript-list] [data-upload-transcript-empty] p {
+    color: #475569;
+}
+
+[data-transcription-chat-template] [data-stored-item],
+[data-transcription-chat-template] [data-upload-stored-item] {
+    border-color: #e2e8f0;
+    padding-block: 1rem;
+}
+
+[data-transcription-chat-template] [data-stored-item] .uppercase,
+[data-transcription-chat-template] [data-upload-stored-item] .uppercase {
+    text-transform: none;
+}
+
+[data-transcription-chat-template] [data-stored-item] [class*='tracking-'],
+[data-transcription-chat-template] [data-upload-stored-item] [class*='tracking-'] {
+    letter-spacing: 0;
+}
+
+[data-transcription-chat-template] [data-stored-item] .text-cyan-300,
+[data-transcription-chat-template] [data-upload-stored-item] .text-cyan-300 {
+    color: #2563eb;
+}
+
+[data-transcription-chat-template] [data-stored-item] .text-slate-100,
+[data-transcription-chat-template] [data-stored-item] .text-white,
+[data-transcription-chat-template] [data-upload-stored-item] .text-slate-100,
+[data-transcription-chat-template] [data-upload-stored-item] .text-white {
+    color: #0f172a;
+}
+
+[data-transcription-chat-template] [data-stored-item] .text-slate-400,
+[data-transcription-chat-template] [data-stored-item] .text-slate-500,
+[data-transcription-chat-template] [data-upload-stored-item] .text-slate-400,
+[data-transcription-chat-template] [data-upload-stored-item] .text-slate-500 {
+    color: #64748b;
+}
+
+[data-transcription-chat-template] [data-stored-item] button,
+[data-transcription-chat-template] [data-upload-stored-item] button {
+    border-color: #dbeafe;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+[data-transcription-chat-template] [data-stored-item] button:hover,
+[data-transcription-chat-template] [data-upload-stored-item] button:hover {
+    border-color: #93c5fd;
+    background: #dbeafe;
+}
+
+[data-transcription-chat-template] [data-stored-item] span.rounded-lg.border,
+[data-transcription-chat-template] [data-upload-stored-item] span.rounded-lg.border {
+    border-color: #bbf7d0;
+    background: #ecfdf5;
+    color: #166534;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+[data-transcription-chat-template] [data-log-live],
+[data-transcription-chat-template] [data-log-upload] {
+    display: inline-flex !important;
+    width: auto !important;
+    white-space: nowrap;
+}
+
+[data-transcription-chat-template] [data-chat-panel],
+[data-transcription-chat-template] [data-chat-controls],
+[data-transcription-chat-template] [data-chat-transcript-actions],
+[data-transcription-chat-template] [data-chat-type-controls] {
+    transition: opacity 180ms ease, transform 180ms ease;
+}
+
+[data-transcription-chat-template] [data-upload-queue]:disabled,
+[data-transcription-chat-template] [data-upload-pause]:disabled,
+[data-transcription-chat-template] [data-upload-continue]:disabled,
+[data-transcription-chat-template] [data-upload-retry]:disabled,
+[data-transcription-chat-template] [data-upload-cancel]:disabled {
+    display: none;
+}
+
+html[data-ui-page='workspace'] body[data-focused-workspace='true'] [data-app-sidebar='pending'] [data-sidebar-panel],
+html[data-ui-page='live'] body[data-focused-workspace='true'] [data-app-sidebar='pending'] [data-sidebar-panel] {
+    border-color: #e2e8f0;
+    background: #ffffff;
+}
+
+html[data-ui-page='workspace'] body[data-focused-workspace='true'] [data-app-sidebar='pending'] header,
+html[data-ui-page='live'] body[data-focused-workspace='true'] [data-app-sidebar='pending'] header {
+    border-color: #e2e8f0;
+}
+
+html[data-ui-page='workspace'] body[data-focused-workspace='true'] [data-app-sidebar='pending'] h2,
+html[data-ui-page='workspace'] body[data-focused-workspace='true'] [data-app-sidebar='pending'] [data-audio-queue] .text-white,
+html[data-ui-page='workspace'] body[data-focused-workspace='true'] [data-app-sidebar='pending'] [data-audio-queue] .text-slate-200,
+html[data-ui-page='workspace'] body[data-focused-workspace='true'] [data-app-sidebar='pending'] [data-upload-queue-list] .text-white,
+html[data-ui-page='workspace'] body[data-focused-workspace='true'] [data-app-sidebar='pending'] [data-upload-queue-list] .text-slate-200,
+html[data-ui-page='live'] body[data-focused-workspace='true'] [data-app-sidebar='pending'] h2,
+html[data-ui-page='live'] body[data-focused-workspace='true'] [data-app-sidebar='pending'] [data-audio-queue] .text-white,
+html[data-ui-page='live'] body[data-focused-workspace='true'] [data-app-sidebar='pending'] [data-audio-queue] .text-slate-200 {
+    color: #0f172a;
+}
+
+html[data-ui-page='workspace'] body[data-focused-workspace='true'] [data-app-sidebar='pending'] [data-audio-queue] .text-cyan-300,
+html[data-ui-page='workspace'] body[data-focused-workspace='true'] [data-app-sidebar='pending'] [data-upload-queue-list] .text-cyan-300,
+html[data-ui-page='live'] body[data-focused-workspace='true'] [data-app-sidebar='pending'] [data-audio-queue] .text-cyan-300 {
+    color: #2563eb;
+}
+
+html[data-ui-page='workspace'] body[data-focused-workspace='true'] [data-app-sidebar='pending'] [data-audio-queue] article,
+html[data-ui-page='workspace'] body[data-focused-workspace='true'] [data-app-sidebar='pending'] [data-audio-empty],
+html[data-ui-page='workspace'] body[data-focused-workspace='true'] [data-app-sidebar='pending'] [data-upload-queue-list] article,
+html[data-ui-page='workspace'] body[data-focused-workspace='true'] [data-app-sidebar='pending'] [data-upload-empty],
+html[data-ui-page='live'] body[data-focused-workspace='true'] [data-app-sidebar='pending'] [data-audio-queue] article,
+html[data-ui-page='live'] body[data-focused-workspace='true'] [data-app-sidebar='pending'] [data-audio-empty] {
+    border-color: #dbeafe;
+    background: #eff6ff;
+}

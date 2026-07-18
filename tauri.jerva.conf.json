@@ -1,0 +1,30 @@
+{
+  "$schema": "./node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "JERVA Transcriber",
+  "identifier": "com.jerva.transcriber",
+  "build": {
+    "beforeDevCommand": ".\\node\\node.exe scripts\\dev-local.mjs jerva",
+    "beforeBuildCommand": ".\\node\\node.exe scripts\\prepare-desktop.mjs jerva"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "JERVA Transcriber",
+        "width": 1200,
+        "height": 800,
+        "resizable": true,
+        "backgroundColor": "#071018",
+        "visible": false,
+        "fullscreen": false
+      }
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENBRTE4NjMxNDUyOUExQTUKUldTbG9TbEZNWWJoeW9nTmZLOTZwYWdBbGhESGd0cEhBcHJGdE80NUlHeC9OTG84YWZBN2RFQ0UK",
+      "endpoints": [
+        "https://raw.githubusercontent.com/CodeBreaker822/JervaTranscriber/main/latest.json"
+      ]
+    }
+  }
+}

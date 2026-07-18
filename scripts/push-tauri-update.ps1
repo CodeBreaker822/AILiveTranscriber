@@ -1,4 +1,6 @@
 param(
+    [ValidateSet("", "DILG", "JERVA")]
+    [string] $Edition = "",
     [string] $RemoteUrl = "git@github.com:CodeBreaker822/AITranscriberAPP.git",
     [string] $Branch = "main",
     [ValidateSet("", "Minor", "Medium", "Major")]
@@ -12,8 +14,64 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
 
-$publicUpdaterEndpoint = "https://raw.githubusercontent.com/CodeBreaker822/AITranscriberAPP/$Branch/latest.json"
-$publicRawBaseUrl = "https://github.com/CodeBreaker822/AITranscriberAPP/raw/$Branch"
+$editionConfigs = @{
+    DILG = @{
+        Key = "dilg"
+        Label = "DILG / ASTRA AI Transcriber"
+        ProductName = "ASTRA AI Transcriber"
+        RemoteUrl = "git@github.com:CodeBreaker822/AITranscriberAPP.git"
+        RepoDirectoryName = "AITranscriberAPP"
+        RepoOwner = "CodeBreaker822"
+        RepoName = "AITranscriberAPP"
+        OverlayConfig = "tauri.dilg.conf.json"
+        ReadmeTemplate = "release\AITranscriberAPP\README.template.md"
+        SigningKeyPaths = @(
+            (Join-Path $env:USERPROFILE ".tauri\astra-dilg-updater.key"),
+            (Join-Path $env:USERPROFILE ".tauri\aitranscriber-updater.key")
+        )
+    }
+    JERVA = @{
+        Key = "jerva"
+        Label = "JERVA Transcriber"
+        ProductName = "JERVA Transcriber"
+        RemoteUrl = "git@github.com:CodeBreaker822/JervaTranscriber.git"
+        RepoDirectoryName = "JervaTranscriber"
+        RepoOwner = "CodeBreaker822"
+        RepoName = "JervaTranscriber"
+        OverlayConfig = "tauri.jerva.conf.json"
+        ReadmeTemplate = "release\JervaTranscriber\README.template.md"
+        SigningKeyPaths = @(
+            (Join-Path $env:USERPROFILE ".tauri\jerva-transcriber-updater.key")
+        )
+    }
+}
+
+function Get-UpdateEdition {
+    param([string] $RequestedEdition)
+
+    if ($RequestedEdition) {
+        return $RequestedEdition.ToUpperInvariant()
+    }
+
+    Write-Host ""
+    Write-Host "Which app edition are you updating?"
+    Write-Host "  1) DILG  - ASTRA AI Transcriber"
+    Write-Host "  2) JERVA - JERVA Transcriber"
+
+    while ($true) {
+        $answer = (Read-Host "Choose DILG or JERVA").Trim().ToLowerInvariant()
+
+        switch ($answer) {
+            "1" { return "DILG" }
+            "dilg" { return "DILG" }
+            "astra" { return "DILG" }
+            "2" { return "JERVA" }
+            "jerva" { return "JERVA" }
+        }
+
+        Write-Host "Please type DILG or JERVA."
+    }
+}
 
 function Get-UpdateKind {
     param([string] $RequestedKind)
@@ -195,7 +253,7 @@ Run these, then retry tauri:update:
   ssh -T git@github.com
 
 Then continue without bumping or rebuilding:
-  .\node\npm.cmd run tauri:update -- -UseCurrentVersion -SkipBuild
+  .\node\npm.cmd run tauri:update -- -Edition $selectedEditionKey -UseCurrentVersion -SkipBuild
 
 ssh-add output:
 $identityOutput
@@ -203,15 +261,32 @@ $identityOutput
     }
 }
 
+$selectedEditionKey = Get-UpdateEdition -RequestedEdition $Edition
+$selectedEdition = $editionConfigs[$selectedEditionKey]
+$publicUpdaterEndpoint = "https://raw.githubusercontent.com/$($selectedEdition.RepoOwner)/$($selectedEdition.RepoName)/$Branch/latest.json"
+$publicRawBaseUrl = "https://github.com/$($selectedEdition.RepoOwner)/$($selectedEdition.RepoName)/raw/$Branch"
+
+if ($RemoteUrl -eq "git@github.com:CodeBreaker822/AITranscriberAPP.git" -and $selectedEditionKey -ne "DILG") {
+    $RemoteUrl = $selectedEdition.RemoteUrl
+}
+
+Write-Host ""
+Write-Host "Selected edition: $($selectedEdition.Label)"
+Write-Host "Updater repository: $RemoteUrl"
+
 $config = Get-Content -Raw "src-tauri\tauri.conf.json" | ConvertFrom-Json
 $currentVersion = $config.version
 
-$endpoint = $config.plugins.updater.endpoints[0]
-if ($endpoint -ne $publicUpdaterEndpoint) {
-    throw "Updater endpoint must point to CodeBreaker822/AITranscriberAPP. Got: $endpoint"
+$overlayPath = Join-Path $repoRoot $selectedEdition.OverlayConfig
+if (-not (Test-Path -LiteralPath $overlayPath -PathType Leaf)) {
+    throw "Missing Tauri edition config: $overlayPath"
 }
 
-Assert-SshAgentHasIdentity
+$overlayConfig = Get-Content -Raw -LiteralPath $overlayPath | ConvertFrom-Json
+$endpoint = $overlayConfig.plugins.updater.endpoints[0]
+if ($endpoint -ne $publicUpdaterEndpoint) {
+    throw "Updater endpoint for $($selectedEdition.Label) must point to $publicUpdaterEndpoint. Got: $endpoint"
+}
 
 if ($UseCurrentVersion) {
     $nextVersion = $currentVersion
@@ -226,7 +301,31 @@ if ($UseCurrentVersion) {
     Write-Host "$updateKind update version: $nextVersion"
 }
 
-Set-ProjectVersion -Config $config -Version $nextVersion
+if ($selectedEditionKey -eq "JERVA" -and $overlayConfig.plugins.updater.pubkey -eq "JERVA_UPDATER_PUBLIC_KEY_NOT_CONFIGURED") {
+    throw "JERVA updater public key is not configured. Generate a separate JERVA Tauri signing key, then place its public key in tauri.jerva.conf.json."
+}
+
+if ($env:TAURI_SIGNING_PRIVATE_KEY -and (Test-Path -LiteralPath $env:TAURI_SIGNING_PRIVATE_KEY -PathType Leaf)) {
+    $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content -Raw -LiteralPath $env:TAURI_SIGNING_PRIVATE_KEY
+} elseif (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
+    $defaultKeyPath = $selectedEdition.SigningKeyPaths |
+        Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+        Select-Object -First 1
+
+    if ($defaultKeyPath) {
+        $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content -Raw -LiteralPath $defaultKeyPath
+    }
+}
+
+if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
+    throw "Missing TAURI_SIGNING_PRIVATE_KEY for $($selectedEdition.Label). Set it to the updater private key contents or create one of these files: $($selectedEdition.SigningKeyPaths -join ', ')"
+}
+
+if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD)) {
+    $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
+}
+
+$env:AI_TRANSCRIBER_EDITION = $selectedEdition.Key
 
 Write-Host "Running updater checks..."
 & .\node\npm.cmd run tauri:update-test
@@ -234,39 +333,27 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-$defaultKeyPath = Join-Path $env:USERPROFILE ".tauri\aitranscriber-updater.key"
-if ($env:TAURI_SIGNING_PRIVATE_KEY -and (Test-Path -LiteralPath $env:TAURI_SIGNING_PRIVATE_KEY -PathType Leaf)) {
-    $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content -Raw -LiteralPath $env:TAURI_SIGNING_PRIVATE_KEY
-} elseif (-not $env:TAURI_SIGNING_PRIVATE_KEY -and (Test-Path -LiteralPath $defaultKeyPath -PathType Leaf)) {
-    $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content -Raw -LiteralPath $defaultKeyPath
-}
-
-if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
-    throw "Missing TAURI_SIGNING_PRIVATE_KEY. Set it to the updater private key contents before running tauri:update."
-}
-
-if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD)) {
-    $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
-}
+Set-ProjectVersion -Config $config -Version $nextVersion
 
 if ($SkipBuild) {
     Write-Host "Skipping build and using existing Tauri artifacts for $nextVersion..."
 } else {
-    Write-Host "Building official Tauri updater artifacts..."
-    & .\node\npm.cmd run tauri:build
+    Write-Host "Building official $($selectedEdition.ProductName) updater artifacts..."
+    & .\node\npm.cmd run tauri:build -- $($selectedEdition.Key)
     if ($LASTEXITCODE -ne 0) {
         exit $LASTEXITCODE
     }
 }
 
 $nsisDirectory = Join-Path $repoRoot "src-tauri\target\release\bundle\nsis"
+$installerNamePrefix = $selectedEdition.ProductName
 $installer = Get-ChildItem -LiteralPath $nsisDirectory -Filter "*.exe" |
-    Where-Object { $_.Name -like "*$nextVersion*" } |
+    Where-Object { $_.Name -like "*$nextVersion*" -and $_.Name -like "$installerNamePrefix*" } |
     Sort-Object LastWriteTimeUtc -Descending |
     Select-Object -First 1
 
 if (-not $installer) {
-    throw "Could not find the NSIS installer for version $nextVersion in $nsisDirectory."
+    throw "Could not find the $($selectedEdition.ProductName) NSIS installer for version $nextVersion in $nsisDirectory."
 }
 
 $signaturePath = "$($installer.FullName).sig"
@@ -274,7 +361,7 @@ if (-not (Test-Path -LiteralPath $signaturePath)) {
     throw "Could not find the Tauri updater signature: $signaturePath"
 }
 
-$publicReadmeTemplatePath = Join-Path $repoRoot "release\AITranscriberAPP\README.template.md"
+$publicReadmeTemplatePath = Join-Path $repoRoot $selectedEdition.ReadmeTemplate
 if (-not (Test-Path -LiteralPath $publicReadmeTemplatePath -PathType Leaf)) {
     throw "Missing public app repository README template: $publicReadmeTemplatePath"
 }
@@ -288,20 +375,37 @@ $publicReadme = Render-Template -TemplatePath $publicReadmeTemplatePath -Variabl
     UPDATE_FOLDER = $releaseDirectoryName
     INSTALLER_FILE = $installer.Name
 }
+
+Assert-SshAgentHasIdentity
+
 $tempParent = Join-Path ([System.IO.Path]::GetTempPath()) "aitranscriber-updater-$([System.Guid]::NewGuid().ToString('N'))"
-$publishRoot = Join-Path $tempParent "AITranscriberAPP"
+$publishRoot = Join-Path $tempParent $selectedEdition.RepoDirectoryName
 
 try {
     New-Item -ItemType Directory -Path $tempParent | Out-Null
     Write-Host "Cloning public updater repository over SSH..."
     & git clone --depth 1 --branch $Branch $RemoteUrl $publishRoot
     if ($LASTEXITCODE -ne 0) {
-        exit $LASTEXITCODE
+        Write-Host "Branch $Branch was not available. Cloning repository default branch and preparing $Branch..."
+
+        if (Test-Path -LiteralPath $publishRoot) {
+            Remove-Item -LiteralPath $publishRoot -Recurse -Force
+        }
+
+        & git clone $RemoteUrl $publishRoot
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
+
+        & git -C $publishRoot checkout -B $Branch
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
     }
 
     & git -C $publishRoot lfs install --local
     & git -C $publishRoot lfs track "updates/**"
-    & git -C $publishRoot config "lfs.https://github.com/CodeBreaker822/AITranscriberAPP.git/info/lfs.locksverify" false
+    & git -C $publishRoot config "lfs.https://github.com/$($selectedEdition.RepoOwner)/$($selectedEdition.RepoName).git/info/lfs.locksverify" false
 
     $resolvedPublishRoot = [System.IO.Path]::GetFullPath($publishRoot)
     $resolvedTempParent = [System.IO.Path]::GetFullPath($tempParent)
@@ -326,7 +430,7 @@ try {
 
     $latestJson = @{
         version = $nextVersion
-        notes = "AITranscriber $nextVersion update."
+        notes = "$($selectedEdition.ProductName) $nextVersion update."
         pub_date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
         platforms = @{
             "windows-x86_64" = @{
@@ -353,7 +457,7 @@ try {
         throw "No updater artifact changes were found to publish."
     }
 
-    & git -C $publishRoot commit -m "App update v$nextVersion"
+    & git -C $publishRoot commit -m "$($selectedEdition.ProductName) update v$nextVersion"
     Write-Host "Pushing updater artifacts to $RemoteUrl ($Branch) over SSH..."
     & git -C $publishRoot push origin "HEAD:refs/heads/$Branch"
     if ($LASTEXITCODE -ne 0) {

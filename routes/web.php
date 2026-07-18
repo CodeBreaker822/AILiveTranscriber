@@ -17,6 +17,7 @@ use App\Http\Controllers\UploadedAudioTranscriptionController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [TranscriptionPageController::class, 'live'])->name('transcription.live');
+Route::get('/workspace', [TranscriptionPageController::class, 'workspace'])->name('transcription.workspace');
 Route::get('/desktop-loading', [TranscriptionPageController::class, 'desktopLoading'])->name('desktop.loading');
 Route::get('/desktop-assets-ready', [TranscriptionPageController::class, 'desktopAssetsReady'])->name('desktop.assets-ready');
 

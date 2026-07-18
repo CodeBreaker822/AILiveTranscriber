@@ -1,8 +1,5 @@
 export const escapeHtml = (value) => {
-    const element = document.createElement('div');
-    element.textContent = String(value || '');
-
-    return element.innerHTML;
+    return $('<div>').text(String(value || '')).html();
 };
 
 export const notify = (message, type = 'success') => {

@@ -32,6 +32,13 @@ const STARTUP_RETRY_DELAY: Duration = Duration::from_millis(250);
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 const OFFLINE_WHISPER_MODEL: &str = "ggml-large-v3-turbo-q8_0.bin";
 
+fn app_brand_name() -> &'static str {
+    match option_env!("AI_TRANSCRIBER_EDITION") {
+        Some("jerva") | Some("JERVA") => "JERVA Transcriber",
+        _ => "ASTRA AI Transcriber",
+    }
+}
+
 #[derive(Clone, Serialize)]
 struct WhisperProgressEvent {
     progress_id: String,
@@ -380,7 +387,8 @@ fn reset_startup_log(paths: &LaravelPaths) -> Result<File, String> {
 
     writeln!(
         file,
-        "AITranscriber startup log\nProject: {}\nDatabase: {}\nStorage: {}\nCPU: {} logical processors; Whisper: {} threads\nMemory: {} MB total; {} MB available; Whisper budget: {} MB\nGPU: {}; VRAM: {} MB; Whisper budget: {} MB\n",
+        "{} startup log\nProject: {}\nDatabase: {}\nStorage: {}\nCPU: {} logical processors; Whisper: {} threads\nMemory: {} MB total; {} MB available; Whisper budget: {} MB\nGPU: {}; VRAM: {} MB; Whisper budget: {} MB\n",
+        app_brand_name(),
         paths.project_dir.display(),
         paths.database_path.display(),
         paths.storage_path.display(),
@@ -951,7 +959,8 @@ fn show_startup_error(app: &tauri::AppHandle, message: &str) {
     if let Some(window) = app.get_webview_window("main") {
         let escaped = escape_html(message);
         let html = format!(
-            "<main style=\"font-family:Segoe UI,sans-serif;padding:24px;color:#e2e8f0;background:#071018;min-height:100vh\"><h1 style=\"font-size:22px;margin:0 0 12px\">AITranscriber could not start</h1><p style=\"line-height:1.6;margin:0 0 16px;color:#94a3b8\">The desktop app waits for its own PHP server to return a successful page before opening the workspace.</p><pre style=\"white-space:pre-wrap;line-height:1.5;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);border-radius:8px;padding:14px;color:#e2e8f0\">{}</pre></main>",
+            "<main style=\"font-family:Segoe UI,sans-serif;padding:24px;color:#e2e8f0;background:#071018;min-height:100vh\"><h1 style=\"font-size:22px;margin:0 0 12px\">{} could not start</h1><p style=\"line-height:1.6;margin:0 0 16px;color:#94a3b8\">The desktop app waits for its own PHP server to return a successful page before opening the workspace.</p><pre style=\"white-space:pre-wrap;line-height:1.5;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);border-radius:8px;padding:14px;color:#e2e8f0\">{}</pre></main>",
+            app_brand_name(),
             escaped
         );
         let script = format!(

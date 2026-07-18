@@ -190,7 +190,7 @@ export const initLivePage = (context) => {
         if (!logs.length) {
             $storedList.html(`
                 <div class="w-full py-4">
-                    <p class="text-sm text-slate-200">No processing logs found for ${escapeHtml(categoryName)}.</p>
+                    <p class="text-sm text-blue-900">No processing logs found for ${escapeHtml(categoryName)}.</p>
                 </div>
             `);
             return;
@@ -199,32 +199,32 @@ export const initLivePage = (context) => {
         $storedList.html(logs.map((log) => {
             const segments = Array.isArray(log.speech_segments) ? log.speech_segments : [];
             const statusClasses = log.speech_detected
-                ? 'border-emerald-300/20 bg-emerald-300/10 text-emerald-100'
-                : 'border-amber-300/20 bg-amber-300/10 text-amber-100';
+                ? 'border-blue-200 bg-blue-50 text-blue-800'
+                : 'border-blue-300 bg-white text-blue-900';
             const statusLabel = log.speech_detected ? 'Speech' : 'No speech';
             const segmentHtml = segments.length
                 ? segments.map((segment, index) => `
-                    <div class="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2">
-                        <p class="text-[0.66rem] font-semibold uppercase tracking-[0.18em] text-cyan-300">Segment ${index + 1}</p>
-                        <p class="mt-1 text-xs text-white">${formatClock(Number(segment.absolute_start_ms || 0))}-${formatClock(Number(segment.absolute_end_ms || 0))}</p>
-                        <p class="mt-0.5 text-[0.68rem] text-slate-400">Inside clip ${formatRelativeClock(Number(segment.start_ms || 0))}-${formatRelativeClock(Number(segment.end_ms || 0))}</p>
+                    <div class="rounded-lg border border-blue-100 bg-blue-50/50 px-3 py-2">
+                        <p class="text-xs font-semibold uppercase text-blue-700">Segment ${index + 1}</p>
+                        <p class="mt-1 text-sm font-semibold text-black">${formatClock(Number(segment.absolute_start_ms || 0))}-${formatClock(Number(segment.absolute_end_ms || 0))}</p>
+                        <p class="mt-0.5 text-xs text-blue-900">Inside clip ${formatRelativeClock(Number(segment.start_ms || 0))}-${formatRelativeClock(Number(segment.end_ms || 0))}</p>
                     </div>
                 `).join('')
-                : '<p class="text-xs text-slate-400">Hosted transcription skipped for this range.</p>';
+                : '<p class="text-xs text-blue-900">Hosted transcription skipped for this range.</p>';
 
             return `
-                <article class="w-full border-b border-white/8 py-2.5 last:border-b-0">
+                <article class="w-full border-b border-blue-100 py-4 last:border-b-0">
                     <div class="flex flex-wrap items-start justify-between gap-2">
                         <div>
-                            <p class="text-xs font-medium leading-5 tracking-[0.14em] text-cyan-300">${escapeHtml(log.range_label || '')}</p>
-                            <p class="mt-0.5 text-[0.68rem] text-slate-400">Clip ${Number(log.clip_index || 0)} · ${formatClock(Number(log.clip_start_ms || 0))}-${formatClock(Number(log.clip_end_ms || 0))}</p>
+                            <p class="text-sm font-semibold leading-6 text-blue-700">${escapeHtml(log.range_label || '')}</p>
+                            <p class="mt-0.5 text-xs text-blue-900">Clip ${Number(log.clip_index || 0)} - ${formatClock(Number(log.clip_start_ms || 0))}-${formatClock(Number(log.clip_end_ms || 0))}</p>
                         </div>
-                        <span class="rounded-lg border px-2 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.16em] ${statusClasses}">${statusLabel}</span>
+                        <span class="rounded-lg border px-2.5 py-1 text-xs font-semibold uppercase ${statusClasses}">${statusLabel}</span>
                     </div>
                     <div class="mt-2 grid gap-2 sm:grid-cols-2">
                         ${segmentHtml}
                     </div>
-                    <p class="mt-2 text-[0.68rem] text-slate-500">Speech ${formatClock(Number(log.speech_duration_ms || 0))} · Filtered ${formatBytes(Number(log.filtered_size_bytes || 0))}</p>
+                    <p class="mt-2 text-xs font-medium text-blue-950">Speech ${formatClock(Number(log.speech_duration_ms || 0))} - Filtered ${formatBytes(Number(log.filtered_size_bytes || 0))}</p>
                 </article>
             `;
         }).join(''));
@@ -415,8 +415,33 @@ export const initLivePage = (context) => {
         }
     };
 
+    const storedItemRecency = (item) => {
+        const timestamp = Date.parse(item.updatedAt || item.updated_at || item.createdAt || item.created_at || '');
+        const id = Number(item.id || 0);
+
+        return Number.isFinite(timestamp) ? timestamp : (Number.isFinite(id) ? id : 0);
+    };
+
     const syncCategoryOptions = () => {
-        return [...new Set(liveState.storedItems.map((item) => item.categoryName).filter(Boolean))];
+        const categories = new Map();
+
+        liveState.storedItems.forEach((item) => {
+            const category = String(item.categoryName || '').trim();
+            if (!category) {
+                return;
+            }
+
+            const key = category.toLowerCase();
+            const recency = storedItemRecency(item);
+            const existing = categories.get(key);
+            if (!existing || recency > existing.recency) {
+                categories.set(key, { name: category, recency });
+            }
+        });
+
+        return Array.from(categories.values())
+            .sort((first, second) => second.recency - first.recency || first.name.localeCompare(second.name))
+            .map((category) => category.name);
     };
 
     const getStoredItemsForCategory = () => {
@@ -1006,12 +1031,13 @@ export const initLivePage = (context) => {
                 const xhr = $.ajaxSettings.xhr();
 
                 if (xhr.upload) {
-                    xhr.upload.addEventListener('progress', (event) => {
-                        if (!event.lengthComputable) {
+                    $(xhr.upload).on('progress', (event) => {
+                        const progressEvent = event.originalEvent || event;
+                        if (!progressEvent.lengthComputable) {
                             return;
                         }
 
-                        const percent = Math.max(0, Math.min(100, (event.loaded / event.total) * 100));
+                        const percent = Math.max(0, Math.min(100, (progressEvent.loaded / progressEvent.total) * 100));
                         updateLivePhaseProgress(nextItem.id, {
                             prepare: percent,
                         }, `Prepare ${Math.round(livePhaseAverage({
@@ -1206,20 +1232,20 @@ export const initLivePage = (context) => {
             updateQueueItemProgress(item.id, liveState.activeAudio.currentTime * 1000, durationMs);
         };
 
-        liveState.activeAudio.addEventListener('loadedmetadata', syncDuration);
-        liveState.activeAudio.addEventListener('timeupdate', () => {
+        $(liveState.activeAudio).on('loadedmetadata', syncDuration);
+        $(liveState.activeAudio).on('timeupdate', () => {
             const durationMs = Number.isFinite(liveState.activeAudio.duration) && liveState.activeAudio.duration > 0
                 ? liveState.activeAudio.duration * 1000
                 : item.durationMs || 1000;
 
             updateQueueItemProgress(item.id, liveState.activeAudio.currentTime * 1000, durationMs);
         });
-        liveState.activeAudio.addEventListener('pause', () => {
+        $(liveState.activeAudio).on('pause', () => {
             if (liveState.activeAudioId === item.id && liveState.activeAudio.paused) {
                 setQueueItemPlaybackState(item.id, false);
             }
         });
-        liveState.activeAudio.addEventListener('ended', () => {
+        $(liveState.activeAudio).on('ended', () => {
             const durationMs = Number.isFinite(liveState.activeAudio.duration) && liveState.activeAudio.duration > 0
                 ? liveState.activeAudio.duration * 1000
                 : item.durationMs || 1000;
@@ -1255,13 +1281,13 @@ export const initLivePage = (context) => {
         liveState.activeAudioId = item.id;
         liveState.activePlaybackKind = 'stored';
 
-        liveState.activeAudio.addEventListener('ended', () => {
+        $(liveState.activeAudio).on('ended', () => {
             setStoredItemPlaybackState(item.id, false);
             liveState.activeAudio = null;
             liveState.activeAudioId = null;
             liveState.activePlaybackKind = null;
         });
-        liveState.activeAudio.addEventListener('pause', () => {
+        $(liveState.activeAudio).on('pause', () => {
             if (liveState.activeAudioId === item.id && liveState.activeAudio.paused) {
                 setStoredItemPlaybackState(item.id, false);
             }
@@ -1474,12 +1500,13 @@ export const initLivePage = (context) => {
         liveState.segmentIndex += 1;
 
         liveState.recorder = new MediaRecorder(liveState.stream);
-        liveState.recorder.addEventListener('dataavailable', (event) => {
-            if (event.data && event.data.size > 0) {
-                liveState.activeParts.push(event.data);
+        $(liveState.recorder).on('dataavailable', (event) => {
+            const recorderEvent = event.originalEvent || event;
+            if (recorderEvent.data && recorderEvent.data.size > 0) {
+                liveState.activeParts.push(recorderEvent.data);
             }
         });
-        liveState.recorder.addEventListener('stop', () => {
+        $(liveState.recorder).on('stop', () => {
             clearTimeout(liveState.autoStopTimer);
             liveState.autoStopTimer = null;
 
@@ -1697,7 +1724,7 @@ export const initLivePage = (context) => {
 
     $liveCancelButton.on('click', cancelLiveQueue);
 
-    window.addEventListener('pagehide', () => {
+    $(window).on('pagehide', () => {
         const sessionIds = new Set([
             liveState.activeSpeakerSessionId,
             ...liveState.queuedItems.map((item) => item.speakerSessionId),

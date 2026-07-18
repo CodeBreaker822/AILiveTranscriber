@@ -1,4 +1,4 @@
-<x-app-layout title="Settings | AI Transcriber" active-page="settings">
+<x-astra.app-layout :title="'Settings | '.config('app.brand_name')" active-page="settings">
     <div data-settings-workspace class="mx-auto max-w-4xl space-y-4">
         <section class="rounded-lg border border-white/10 bg-slate-950/70 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.32)] backdrop-blur-xl">
             <div class="flex flex-wrap items-start justify-between gap-4">
@@ -43,14 +43,14 @@
                             name="api_base_url"
                             value="{{ old('api_base_url', $apiBaseUrl) }}"
                             autocomplete="off"
-                            placeholder="https://dilgaims.site/api"
+                            placeholder="https://your-transcription-server.example/api"
                             class="mt-3 w-full rounded-lg border border-white/10 bg-slate-950/80 px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none transition focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-300/20"
                         >
                     </label>
 
                     <label class="block rounded-lg border border-white/10 bg-white/[0.03] p-4">
                         <span class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">License key</span>
-                        <span class="mt-1 block text-sm leading-6 text-slate-400">This key connects AITranscriber to the hosted transcription API.</span>
+                        <span class="mt-1 block text-sm leading-6 text-slate-400">This key connects {{ config('app.brand_name') }} to the hosted transcription API.</span>
                         @if ($licenseKeySuffix)
                             <span class="mt-2 block text-sm font-semibold text-slate-200">Saved license ending in {{ $licenseKeySuffix }}</span>
                         @endif
@@ -280,4 +280,4 @@
         </section>
     </div>
 
-</x-app-layout>
+</x-astra.app-layout>

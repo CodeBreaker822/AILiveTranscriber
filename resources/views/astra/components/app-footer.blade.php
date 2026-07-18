@@ -1,7 +1,5 @@
 @php
-    $footerText = config('app.footer_license')
-        ? 'ASTRA — Adaptive Speech Transcription and Recording Assistant. All rights reserved.'
-        : (string) config('app.footer_text');
+    $footerText = (string) config('app.footer_brand_text');
 @endphp
 
 <footer data-app-footer class="shrink-0 rounded-lg border border-white/10 bg-slate-950/70 px-4 py-2 text-xs text-slate-400">

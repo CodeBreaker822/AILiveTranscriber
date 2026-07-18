@@ -7,6 +7,7 @@ use App\Services\Config\AppSettingsService;
 use App\Services\Audio\AudioMemoryService;
 use App\Services\HostedApi\HostedTranscriptionApiService;
 use App\Services\Transcripts\TranscriptMemoryService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -18,7 +19,11 @@ class SettingsController extends Controller
         HostedTranscriptionApiService $api,
         AudioMemoryService $audioMemory,
         TranscriptMemoryService $transcriptMemory,
-    ): View {
+    ): View|RedirectResponse {
+        if (config('app.edition') === 'jerva') {
+            return redirect()->route('transcription.workspace');
+        }
+
         $licenseRefreshError = null;
 
         if ($this->shouldRefreshLicenseCapabilities($settings)) {
@@ -32,7 +37,7 @@ class SettingsController extends Controller
         $provider = $settings->speechToTextProvider();
         $transcriptionProviders = $settings->transcriptionProviderOptions();
 
-        return view('pages.settings', [
+        return view('astra.pages.settings', [
             'apiBaseUrl' => $settings->apiBaseUrl(),
             'hasLicenseKey' => $settings->hasLicenseKey(),
             'licenseKeySuffix' => $settings->licenseKeySuffix(),
@@ -71,9 +76,13 @@ class SettingsController extends Controller
             ->all();
     }
 
-    public function help(): View
+    public function help(): View|RedirectResponse
     {
-        return view('pages.api-key-help', [
+        if (config('app.edition') === 'jerva') {
+            return redirect()->route('transcription.workspace');
+        }
+
+        return view('astra.pages.api-key-help', [
             'providers' => [],
         ]);
     }
@@ -82,8 +91,14 @@ class SettingsController extends Controller
         Request $request,
         AppSettingsService $settings,
         HostedTranscriptionApiService $api,
-    ): RedirectResponse {
+    ): RedirectResponse|JsonResponse {
         if (! $settings->storageIsReady()) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => 'Settings storage is not ready. Please run the database migration first.',
+                ], 422);
+            }
+
             return back()->withErrors([
                 'settings' => 'Settings storage is not ready. Please run the database migration first.',
             ]);
@@ -123,6 +138,15 @@ class SettingsController extends Controller
         try {
             $this->refreshLicenseCapabilities($settings, $api, $licenseKey);
         } catch (SpeechToTextException $exception) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => $exception->getMessage(),
+                    'errors' => [
+                        'license_key' => [$exception->getMessage()],
+                    ],
+                ], 422);
+            }
+
             return back()
                 ->withInput()
                 ->withErrors(['license_key' => $exception->getMessage()]);
@@ -140,9 +164,40 @@ class SettingsController extends Controller
             (int) ($validated['resource_gpu_vram_budget_mb'] ?? $resourceProfile['auto_gpu_vram_budget_mb']),
         );
 
+        $message = 'Settings saved.';
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'message' => $message,
+                'data' => $this->settingsPayload($settings),
+            ]);
+        }
+
         return redirect()
-            ->route('settings.edit')
-            ->with('status', 'License saved and server capabilities loaded.');
+            ->route($request->string('return_to')->toString() === 'workspace' ? 'transcription.workspace' : 'settings.edit')
+            ->with('status', $message);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function settingsPayload(AppSettingsService $settings): array
+    {
+        $provider = $settings->speechToTextProvider();
+        $providers = $settings->transcriptionProviderOptions();
+
+        return [
+            'api_base_url' => $settings->apiBaseUrl(),
+            'has_license_key' => $settings->hasLicenseKey(),
+            'license_key_suffix' => $settings->licenseKeySuffix(),
+            'license_status_label' => $settings->licenseStatusLabel(),
+            'license_status_message' => $settings->licenseStatusMessage(),
+            'transcription_providers' => array_values($providers),
+            'provider_payload' => $this->providerPayload($providers),
+            'selected_provider' => $provider,
+            'selected_model' => $settings->speechToTextModel($provider),
+            'resource_profile' => $settings->resourceProfile(),
+        ];
     }
 
     private function shouldRefreshLicenseCapabilities(AppSettingsService $settings): bool

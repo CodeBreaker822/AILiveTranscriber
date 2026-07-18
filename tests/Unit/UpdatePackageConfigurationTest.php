@@ -29,12 +29,14 @@ class UpdatePackageConfigurationTest extends TestCase
         $script = file_get_contents(dirname(__DIR__, 2).'/scripts/push-tauri-update.ps1');
 
         $this->assertStringContainsString('git@github.com:CodeBreaker822/AITranscriberAPP.git', $script);
+        $this->assertStringContainsString('git@github.com:CodeBreaker822/JervaTranscriber.git', $script);
         $this->assertStringContainsString('lfs track "updates/**"', $script);
         $this->assertStringContainsString('latest.json', $script);
         $this->assertStringContainsString('*.exe', $script);
         $this->assertStringContainsString('.sig', $script);
         $this->assertStringContainsString('updates\\$releaseDirectoryName', $script);
         $this->assertStringContainsString('release\AITranscriberAPP\README.template.md', $script);
+        $this->assertStringContainsString('release\JervaTranscriber\README.template.md', $script);
         $this->assertStringContainsString('Render-Template', $script);
         $this->assertStringContainsString('APP_VERSION = $nextVersion', $script);
         $this->assertStringContainsString('UPDATE_FOLDER = $releaseDirectoryName', $script);
@@ -109,6 +111,8 @@ class UpdatePackageConfigurationTest extends TestCase
         $this->assertArrayNotHasKey('../.git', $resources);
         $this->assertArrayNotHasKey('../whisper', $resources);
         $this->assertArrayNotHasKey('../.git-broken', $resources);
+        $this->assertArrayNotHasKey('../resources', $resources);
+        $this->assertSame('resources', $resources['../build/tauri/resources'] ?? null);
         $this->assertNotContains('.git', array_values($resources), true);
         $this->assertNotContains('whisper', array_values($resources), true);
         $this->assertNotContains('.git-broken', array_values($resources), true);
@@ -201,7 +205,7 @@ class UpdatePackageConfigurationTest extends TestCase
 
     public function test_development_does_not_block_page_load_on_remote_update_checks(): void
     {
-        $layout = file_get_contents(dirname(__DIR__, 2).'/resources/views/components/app-layout.blade.php');
+        $layout = file_get_contents(dirname(__DIR__, 2).'/resources/views/shared/components/app-layout.blade.php');
         $script = file_get_contents(dirname(__DIR__, 2).'/public/js/modals/app-update.js');
         $controller = file_get_contents(dirname(__DIR__, 2).'/app/Http/Controllers/AppUpdateController.php');
 

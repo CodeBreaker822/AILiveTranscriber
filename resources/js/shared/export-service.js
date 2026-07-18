@@ -10,13 +10,13 @@ export const browserDownloadFile = (filename, content, mimeType = 'text/plain;ch
         : content;
     const blob = new Blob([body], { type: mimeType });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
+    const $link = $('<a>')
+        .attr('href', url)
+        .attr('download', filename)
+        .appendTo('body');
+    $link.get(0)?.click();
     window.setTimeout(() => {
-        link.remove();
+        $link.remove();
         URL.revokeObjectURL(url);
     }, 1000);
 
@@ -73,36 +73,28 @@ export const saveTranscriptExport = async ({
 };
 
 export const exportTranscriptRows = async ({ exportUrl, categoryName, mode, format }) => {
-    const csrfToken = String(document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '');
+    const csrfToken = String($('meta[name="csrf-token"]').attr('content') || '');
+    let payload = {};
 
-    const response = await fetch(String(exportUrl || ''), {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': csrfToken,
-            'X-Requested-With': 'XMLHttpRequest',
-        },
-        body: JSON.stringify({
-            category_name: categoryName,
-            mode,
-            format,
-        }),
-    });
-
-    if (!response.ok) {
-        let message = 'No transcription is ready to export yet.';
-        try {
-            const payload = await response.json();
-            if (payload?.message) {
-                message = payload.message;
-            }
-        } catch (error) {
-            // keep default message
-        }
-        throw new Error(message);
+    try {
+        payload = await $.ajax({
+            url: String(exportUrl || ''),
+            method: 'POST',
+            dataType: 'json',
+            contentType: 'application/json',
+            headers: {
+                'X-CSRF-TOKEN': csrfToken,
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            data: JSON.stringify({
+                category_name: categoryName,
+                mode,
+                format,
+            }),
+        });
+    } catch (error) {
+        throw new Error(String(error?.responseJSON?.message || 'No transcription is ready to export yet.'));
     }
-
-    const payload = await response.json();
     const filename = String(payload?.filename || 'transcription.txt');
     const mimeType = String(payload?.mime_type || 'text/plain;charset=utf-8');
     const content = String(payload?.content || '');

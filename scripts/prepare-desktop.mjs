@@ -7,24 +7,52 @@ import path from 'node:path';
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const runPhp = path.join(projectRoot, 'scripts', 'run-php.mjs');
 const vite = path.join(projectRoot, 'node_modules', 'vite', 'bin', 'vite.js');
-const emptyBuild = process.argv[2] === 'empty';
+const cliArgs = process.argv.slice(2).map((arg) => String(arg).toLowerCase());
+const emptyBuild = cliArgs.includes('empty');
 const envPath = path.join(projectRoot, '.env');
 const envFile = existsSync(envPath) ? readFileSync(envPath, 'utf8') : '';
+const editionAliases = new Map([
+    ['dilg', 'dilg'],
+    ['astra', 'dilg'],
+    ['jerva', 'jerva'],
+]);
+const requestedEdition = cliArgs.map((arg) => editionAliases.get(arg)).find(Boolean)
+    || editionAliases.get(String(process.env.AI_TRANSCRIBER_EDITION || '').toLowerCase())
+    || editionAliases.get(String(process.env.APP_EDITION || '').toLowerCase())
+    || 'dilg';
+const editionSettings = {
+    dilg: {
+        APP_EDITION: 'dilg',
+        APP_NAME: 'ASTRA AI Transcriber',
+        APP_BRAND_NAME: 'ASTRA AI Transcriber',
+        APP_BRAND_SHORT: 'ASTRA',
+        APP_BRAND_TAGLINE: 'Adaptive Speech Transcription and Recording Assistant.',
+        APP_LOGO_PATH: 'AILogo.png',
+        APP_EXTRA_LOGOS: 'branding/logo-1.png,branding/logo-2.png',
+        APP_FOOTER_TEXT: 'ASTRA - Adaptive Speech Transcription and Recording Assistant. All rights reserved.',
+        APP_LOGO_ONLY: 'false',
+        FOOTER_LICENSE: 'false',
+    },
+    jerva: {
+        APP_EDITION: 'jerva',
+        APP_NAME: 'JERVA Transcriber',
+        APP_BRAND_NAME: 'JERVA Transcriber',
+        APP_BRAND_SHORT: 'JERVA',
+        APP_BRAND_TAGLINE: 'Transcription workspace.',
+        APP_LOGO_PATH: 'AILogo.png',
+        APP_EXTRA_LOGOS: '',
+        APP_FOOTER_TEXT: 'JERVA Transcriber. All rights reserved.',
+        APP_LOGO_ONLY: 'true',
+        FOOTER_LICENSE: 'false',
+    },
+};
 const tauriConfig = JSON.parse(
     readFileSync(path.join(projectRoot, 'src-tauri', 'tauri.conf.json'), 'utf8'),
 );
-const envValue = (key) => {
-    if (Object.prototype.hasOwnProperty.call(process.env, key)) {
-        return process.env[key];
-    }
-
-    const match = envFile.match(new RegExp(`^\\s*${key}\\s*=\\s*(.*)$`, 'm'));
-
-    return match ? match[1].trim().replace(/^['"]|['"]$/g, '') : '';
-};
-const envFlag = (key) => ['1', 'true', 'yes', 'on'].includes(String(envValue(key)).toLowerCase());
-const appLogoOnly = envFlag('APP_LOGO_ONLY');
+const appLogoOnly = editionSettings[requestedEdition].APP_LOGO_ONLY === 'true';
 const privateBrandingDirectory = path.normalize('branding').toLowerCase();
+const primaryLogoPath = path.normalize(editionSettings[requestedEdition].APP_LOGO_PATH).toLowerCase();
+Object.assign(process.env, editionSettings[requestedEdition]);
 const bundledSherpaModels = [
     {
         file: 'pyannote-segmentation-3.0-int8.onnx',
@@ -93,10 +121,81 @@ function preparePackagedPublicDirectory() {
 
             const normalizedRelativePath = path.normalize(relativePath).toLowerCase();
 
+            if (normalizedRelativePath === primaryLogoPath) {
+                return true;
+            }
+
             return normalizedRelativePath !== privateBrandingDirectory
                 && !normalizedRelativePath.startsWith(`${privateBrandingDirectory}${path.sep}`);
         },
     });
+}
+
+function preparePackagedResourcesDirectory() {
+    const sourceDirectory = path.join(projectRoot, 'resources');
+    const destinationDirectory = path.join(projectRoot, 'build', 'tauri', 'resources');
+    const viewsDirectory = path.join(sourceDirectory, 'views');
+    const selectedViewsDirectory = path.normalize(path.join('views', requestedEdition)).toLowerCase();
+    const sharedViewsDirectory = path.normalize(path.join('views', 'shared')).toLowerCase();
+
+    rmSync(destinationDirectory, { recursive: true, force: true });
+    mkdirSync(destinationDirectory, { recursive: true });
+    cpSync(sourceDirectory, destinationDirectory, {
+        recursive: true,
+        force: true,
+        filter: (sourcePath) => {
+            const relativePath = path.relative(sourceDirectory, sourcePath);
+
+            if (!relativePath || relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+                return true;
+            }
+
+            const normalizedRelativePath = path.normalize(relativePath).toLowerCase();
+
+            if (
+                normalizedRelativePath === 'views'
+                || normalizedRelativePath === selectedViewsDirectory
+                || normalizedRelativePath.startsWith(`${selectedViewsDirectory}${path.sep}`)
+                || normalizedRelativePath === sharedViewsDirectory
+                || normalizedRelativePath.startsWith(`${sharedViewsDirectory}${path.sep}`)
+            ) {
+                return true;
+            }
+
+            if (
+                normalizedRelativePath.startsWith(`views${path.sep}`)
+                || normalizedRelativePath === path.relative(sourceDirectory, viewsDirectory).toLowerCase()
+            ) {
+                return false;
+            }
+
+            return true;
+        },
+    });
+}
+
+function setEnvValue(content, key, value) {
+    const safeValue = String(value).includes(' ') ? `"${String(value).replaceAll('"', '\\"')}"` : String(value);
+    const line = `${key}=${safeValue}`;
+    const pattern = new RegExp(`^\\s*${key}\\s*=.*$`, 'm');
+
+    if (pattern.test(content)) {
+        return content.replace(pattern, line);
+    }
+
+    return `${content.replace(/\s*$/, '')}\n${line}\n`;
+}
+
+function preparePackagedEnvFile() {
+    let content = envFile || '';
+
+    for (const [key, value] of Object.entries(editionSettings[requestedEdition])) {
+        content = setEnvValue(content, key, value);
+    }
+
+    const buildMetadataDirectory = path.join(projectRoot, 'build', 'tauri');
+    mkdirSync(buildMetadataDirectory, { recursive: true });
+    writeFileSync(path.join(buildMetadataDirectory, '.env'), content.replace(/\s*$/, '\n'));
 }
 
 function run(command, args) {
@@ -132,12 +231,14 @@ try {
     await run(process.execPath, [vite, 'build']);
     const buildMetadataDirectory = path.join(projectRoot, 'build', 'tauri');
     mkdirSync(buildMetadataDirectory, { recursive: true });
+    preparePackagedEnvFile();
     preparePackagedPublicDirectory();
+    preparePackagedResourcesDirectory();
     writeFileSync(
         path.join(buildMetadataDirectory, 'version.json'),
         `${JSON.stringify({
             version: tauriConfig.version,
-            notes: `AITranscriber ${tauriConfig.version} update.`,
+            notes: `${editionSettings[requestedEdition].APP_BRAND_NAME} ${tauriConfig.version} update.`,
         }, null, 2)}\n`,
     );
 } catch (error) {

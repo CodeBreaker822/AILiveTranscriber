@@ -1,20 +1,36 @@
 @props([
-    'title' => 'AI Transcriber',
+    'title' => null,
     'activePage' => 'live',
+    'focusedWorkspace' => false,
+    'headerView' => null,
+    'footerView' => null,
+    'modalNamespace' => 'shared.modals',
 ])
+
+@php
+    $settings = app(\App\Services\Config\AppSettingsService::class);
+    $offlineModels = app(\App\Services\Speech\OfflineWhisperModelService::class);
+    $jervaEdition = config('app.edition') === 'jerva';
+    $resourceProfile = $resourceProfile ?? $settings->resourceProfile();
+    $hasOfflineTranscriptionModel = $hasOfflineTranscriptionModel ?? $offlineModels->hasSupportedInstalledModel();
+    $speechProvider = $speechProvider ?? $settings->speechToTextProvider();
+    $audioChunkSeconds = $audioChunkSeconds ?? $settings->audioChunkSeconds();
+    $transcribeMaxBatchDurationMs = $transcribeMaxBatchDurationMs ?? $settings->transcribeMaxBatchDurationMs() ?? 1_200_000;
+    $transcribeMaxBatchClips = $transcribeMaxBatchClips ?? $settings->transcribeMaxBatchClips() ?? 20;
+@endphp
 
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" data-ui-page="{{ $activePage }}">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <meta name="theme-color" content="#081018">
+        <meta name="theme-color" content="{{ $jervaEdition ? '#ffffff' : '#081018' }}">
         <meta name="csrf-token" content="{{ csrf_token() }}">
 
-        <title>{{ $title }}</title>
+        <title>{{ $title ?? config('app.brand_name') }}</title>
 
         @fonts
-        <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+        <script src="{{ asset('jquery-4.0.0.min.js') }}"></script>
         <script src="{{ asset('notification.js') }}"></script>
         <script src="{{ asset('loader.js') }}"></script>
         <script src="{{ asset('js/modals/sidebar.js') }}"></script>
@@ -24,10 +40,8 @@
         <style>
             [data-desktop-startup-overlay] {
                 align-items: center;
-                background:
-                    radial-gradient(circle at 20% 20%, rgba(34, 211, 238, 0.12), transparent 28rem),
-                    linear-gradient(180deg, #071018 0%, #0d1620 52%, #101820 100%);
-                color: #e2e8f0;
+                background: {{ $jervaEdition ? '#ffffff' : 'linear-gradient(180deg, #071018 0%, #0d1620 52%, #101820 100%)' }};
+                color: {{ $jervaEdition ? '#000000' : '#e2e8f0' }};
                 display: flex;
                 font-family: "Instrument Sans", "Segoe UI", sans-serif;
                 inset: 0;
@@ -56,15 +70,16 @@
             }
 
             [data-desktop-startup-overlay] p {
-                color: #94a3b8;
+                color: {{ $jervaEdition ? '#1e3a8a' : '#94a3b8' }};
                 font-size: 0.9rem;
                 line-height: 1.6;
                 margin: 0.75rem 0 0;
             }
 
             [data-desktop-startup-overlay] .track {
-                background: rgba(148, 163, 184, 0.18);
+                background: {{ $jervaEdition ? '#dbeafe' : 'rgba(148, 163, 184, 0.18)' }};
                 border-radius: 999px;
+                border: {{ $jervaEdition ? '1px solid #bfdbfe' : '0' }};
                 height: 0.5rem;
                 margin-top: 1.5rem;
                 overflow: hidden;
@@ -72,14 +87,14 @@
 
             [data-desktop-startup-overlay] .bar {
                 animation: desktop-startup-load 1.25s ease-in-out infinite;
-                background: linear-gradient(90deg, #22d3ee, #34d399, #fbbf24);
+                background: {{ $jervaEdition ? '#2563eb' : 'linear-gradient(90deg, #22d3ee, #34d399, #fbbf24)' }};
                 border-radius: inherit;
                 height: 100%;
                 width: 45%;
             }
 
             [data-desktop-startup-overlay] .status {
-                color: #67e8f9;
+                color: {{ $jervaEdition ? '#2563eb' : '#67e8f9' }};
                 font-size: 0.72rem;
                 font-weight: 700;
                 letter-spacing: 0.18em;
@@ -101,6 +116,8 @@
     </head>
     <body
         data-page="{{ $activePage }}"
+        data-app-brand-name="{{ config('app.brand_name') }}"
+        data-focused-workspace="{{ $focusedWorkspace ? 'true' : 'false' }}"
         data-desktop-dev="{{ config('app.desktop_dev') ? 'true' : 'false' }}"
         data-speech-provider="{{ $speechProvider }}"
         data-update-connectivity-url="{{ route('app-update.connectivity') }}"
@@ -116,6 +133,38 @@
         data-audio-chunk-seconds="{{ $audioChunkSeconds }}"
         @if ($activePage === 'live')
             data-upload-url="{{ route('audio-chunks.store') }}"
+            data-stored-url="{{ route('audio-chunks.index') }}"
+            data-vad-log-url="{{ route('audio-vad-logs.index') }}"
+            data-furnish-url="{{ route('transcripts.furnish') }}"
+            data-export-url="{{ route('transcripts.export') }}"
+            data-default-user-id="1"
+            data-default-category-name=""
+            data-play-url-base="{{ url('/audio-chunks') }}"
+            data-delete-url-base="{{ url('/audio-chunks') }}"
+            @if ($focusedWorkspace)
+                data-upload-audio-url="{{ route('audio-uploads.store') }}"
+                data-upload-audio-prepare-url="{{ route('audio-uploads.sections.prepare') }}"
+                data-upload-audio-prepare-batch-url="{{ route('audio-uploads.sections.prepare-batch') }}"
+                data-upload-audio-diarize-url="{{ route('audio-uploads.sections.diarize') }}"
+                data-upload-session-status-url="{{ route('audio-uploads.sessions.status') }}"
+                data-audio-chunk-url="{{ route('audio-chunks.store') }}"
+                data-audio-chunk-batch-url="{{ route('audio-chunks.store-batch') }}"
+                data-audio-chunk-status-url="{{ route('audio-chunks.status') }}"
+                data-transcribe-max-batch-duration-ms="{{ $transcribeMaxBatchDurationMs }}"
+                data-transcribe-max-batch-clips="{{ $transcribeMaxBatchClips }}"
+            @endif
+        @elseif ($activePage === 'workspace')
+            data-upload-url="{{ route('audio-chunks.store') }}"
+            data-upload-audio-url="{{ route('audio-uploads.store') }}"
+            data-upload-audio-prepare-url="{{ route('audio-uploads.sections.prepare') }}"
+            data-upload-audio-prepare-batch-url="{{ route('audio-uploads.sections.prepare-batch') }}"
+            data-upload-audio-diarize-url="{{ route('audio-uploads.sections.diarize') }}"
+            data-upload-session-status-url="{{ route('audio-uploads.sessions.status') }}"
+            data-audio-chunk-url="{{ route('audio-chunks.store') }}"
+            data-audio-chunk-batch-url="{{ route('audio-chunks.store-batch') }}"
+            data-audio-chunk-status-url="{{ route('audio-chunks.status') }}"
+            data-transcribe-max-batch-duration-ms="{{ $transcribeMaxBatchDurationMs }}"
+            data-transcribe-max-batch-clips="{{ $transcribeMaxBatchClips }}"
             data-stored-url="{{ route('audio-chunks.index') }}"
             data-vad-log-url="{{ route('audio-vad-logs.index') }}"
             data-furnish-url="{{ route('transcripts.furnish') }}"
@@ -146,8 +195,8 @@
         @if (config('app.desktop_dev'))
             <div data-desktop-startup-overlay>
                 <main>
-                    <img src="{{ asset('AILogo.png') }}" alt="">
-                    <h1>Starting AITranscriber</h1>
+                    <img src="{{ asset(config('app.brand_logo', 'AILogo.png')) }}" alt="">
+                    <h1>Starting {{ config('app.brand_name') }}</h1>
                     <p>The workspace is loading its interface.</p>
                     <div class="track" aria-hidden="true">
                         <div class="bar"></div>
@@ -157,25 +206,40 @@
             </div>
         @endif
 
-        <div data-app-shell class="h-full p-3 sm:p-4">
-            <div data-app-frame class="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col gap-3">
-                <x-app-header
-                    :active-page="$activePage"
-                    :has-offline-transcription-model="$hasOfflineTranscriptionModel"
-                />
+        <div data-app-shell class="{{ $focusedWorkspace ? 'h-full p-0' : 'h-full p-3 sm:p-4' }}">
+            <div data-app-frame class="{{ $focusedWorkspace ? 'flex h-full min-h-0 w-full flex-col gap-0' : 'mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col gap-3' }}">
+                @unless ($focusedWorkspace)
+                    @if ($headerView)
+                        @include($headerView, [
+                            'activePage' => $activePage,
+                            'hasOfflineTranscriptionModel' => $hasOfflineTranscriptionModel,
+                        ])
+                    @endif
+                @endunless
 
-                <main data-app-main class="min-h-0 flex-1 {{ in_array($activePage, ['live', 'upload'], true) ? 'overflow-hidden' : 'overflow-y-auto' }}">
+                <main data-app-main class="min-h-0 flex-1 {{ in_array($activePage, ['live', 'upload', 'workspace'], true) ? 'overflow-hidden' : 'overflow-y-auto' }}">
                     {{ $slot }}
                 </main>
 
-                <x-app-footer />
+                @unless ($focusedWorkspace)
+                    @if ($footerView)
+                        @include($footerView)
+                    @endif
+                @endunless
             </div>
         </div>
 
-        @if (in_array($activePage, ['live', 'upload'], true))
-            @include('modals.polish-instructions')
-            @include('modals.transcript-summary')
-            @include('modals.pending-clips-sidebar', ['activePage' => $activePage])
+        @if ($focusedWorkspace)
+            @include($modalNamespace.'.app-update', ['activePage' => $activePage])
+            @include($modalNamespace.'.offline-model', ['activePage' => $activePage])
+            <script src="{{ asset('js/modals/app-update.js') }}" defer></script>
+            <script src="{{ asset('js/offline-model.js') }}" defer></script>
+        @endif
+
+        @if (in_array($activePage, ['live', 'upload', 'workspace'], true))
+            @include($modalNamespace.'.polish-instructions')
+            @include($modalNamespace.'.transcript-summary')
+            @include($modalNamespace.'.pending-clips-sidebar', ['activePage' => $activePage])
         @endif
     </body>
 </html>

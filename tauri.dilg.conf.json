@@ -1,0 +1,29 @@
+{
+  "$schema": "./node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "ASTRA AI Transcriber",
+  "build": {
+    "beforeDevCommand": ".\\node\\node.exe scripts\\dev-local.mjs dilg",
+    "beforeBuildCommand": ".\\node\\node.exe scripts\\prepare-desktop.mjs dilg"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "ASTRA AI Transcriber",
+        "width": 1200,
+        "height": 800,
+        "resizable": true,
+        "backgroundColor": "#071018",
+        "visible": false,
+        "fullscreen": false
+      }
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhCNjAzMDQzQzI5ODZCQUQKUldTdGE1akNRekJnaTFYN2cyVGE5N0srekU1ZTRWRGNvQTBPWnNpdU5VejdrcjAvQU5IVjBKZWkK",
+      "endpoints": [
+        "https://raw.githubusercontent.com/CodeBreaker822/AITranscriberAPP/main/latest.json"
+      ]
+    }
+  }
+}

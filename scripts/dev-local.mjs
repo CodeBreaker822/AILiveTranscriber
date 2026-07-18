@@ -6,6 +6,15 @@ import { resourceEnvironment } from './resource-profile.mjs';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const bundledWindowsPhp = path.join(projectRoot, 'php', 'php.exe');
+const editionAliases = new Map([
+    ['dilg', 'dilg'],
+    ['astra', 'dilg'],
+    ['jerva', 'jerva'],
+]);
+const cliArgs = process.argv.slice(2).map((arg) => String(arg).toLowerCase());
+const requestedEdition = cliArgs.map((arg) => editionAliases.get(arg)).find(Boolean)
+    || editionAliases.get(String(process.env.AI_TRANSCRIBER_EDITION || '').toLowerCase())
+    || 'dilg';
 
 if (process.platform !== 'win32' || !existsSync(bundledWindowsPhp)) {
     throw new Error('AITranscriber development requires its bundled Windows PHP runtime.');
@@ -19,6 +28,7 @@ const runtimeEnvironment = {
     SSL_CERT_FILE: caBundle,
     AI_TRANSCRIBER_CA_BUNDLE: caBundle,
     ...resourceEnvironment(),
+    AI_TRANSCRIBER_EDITION: requestedEdition,
     AI_TRANSCRIBER_DESKTOP_DEV: 'true',
 };
 const vite = path.join(projectRoot, 'node_modules', 'vite', 'bin', 'vite.js');

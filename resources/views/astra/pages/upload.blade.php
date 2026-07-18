@@ -1,4 +1,4 @@
-<x-app-layout title="Upload Audio | AI Transcriber" active-page="upload">
+<x-astra.app-layout :title="'Upload Audio | '.config('app.brand_name')" active-page="upload">
     <div data-workspace class="h-full min-h-0 overflow-hidden">
         <div data-workspace-grid class="grid h-full min-h-0 grid-rows-[1fr_auto] gap-3 lg:grid-cols-[1.35fr_0.65fr] lg:grid-rows-1">
             <section data-transcript-panel class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-white/10 bg-slate-950/70 shadow-[0_18px_60px_rgba(0,0,0,0.32)] backdrop-blur-xl">
@@ -192,4 +192,4 @@
             </aside>
         </div>
     </div>
-</x-app-layout>
+</x-astra.app-layout>

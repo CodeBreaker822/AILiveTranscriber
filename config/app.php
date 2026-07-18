@@ -1,5 +1,18 @@
 <?php
 
+$edition = strtolower((string) env('APP_EDITION', env('AI_TRANSCRIBER_EDITION', 'dilg')));
+$edition = $edition === 'jerva' ? 'jerva' : 'dilg';
+$defaultBrandName = $edition === 'jerva' ? 'JERVA Transcriber' : 'ASTRA AI Transcriber';
+$defaultBrandShort = $edition === 'jerva' ? 'JERVA' : 'ASTRA';
+$defaultBrandTagline = $edition === 'jerva'
+    ? 'Transcription workspace.'
+    : 'Adaptive Speech Transcription and Recording Assistant.';
+$defaultFooterText = $edition === 'jerva'
+    ? 'JERVA Transcriber. All rights reserved.'
+    : 'ASTRA - Adaptive Speech Transcription and Recording Assistant. All rights reserved.';
+$defaultExtraLogos = $edition === 'jerva' ? '' : 'branding/logo-1.png,branding/logo-2.png';
+$defaultLogoPath = 'AILogo.png';
+
 return [
 
     /*
@@ -13,7 +26,17 @@ return [
     |
     */
 
-    'name' => env('APP_NAME', 'Laravel'),
+    'name' => env('APP_NAME', $defaultBrandName),
+
+    'edition' => $edition,
+
+    'brand_name' => env('APP_BRAND_NAME', env('APP_NAME', $defaultBrandName)),
+
+    'brand_short' => env('APP_BRAND_SHORT', $defaultBrandShort),
+
+    'brand_tagline' => env('APP_BRAND_TAGLINE', $defaultBrandTagline),
+
+    'brand_logo' => env('APP_LOGO_PATH', $defaultLogoPath),
 
     /*
     |--------------------------------------------------------------------------
@@ -56,12 +79,12 @@ return [
 
     'url' => env('APP_URL', 'http://localhost'),
 
-    'logo_only' => filter_var(env('APP_LOGO_ONLY', false), FILTER_VALIDATE_BOOLEAN),
+    'logo_only' => filter_var(env('APP_LOGO_ONLY', $edition === 'jerva'), FILTER_VALIDATE_BOOLEAN),
 
     'extra_logos' => array_values(array_filter(
         array_map(
             fn ($path) => trim($path),
-            explode(',', (string) env('APP_EXTRA_LOGOS', 'branding/logo-1.png,branding/logo-2.png')),
+            explode(',', (string) env('APP_EXTRA_LOGOS', $defaultExtraLogos)),
         ),
         fn ($path) => $path !== ''
             && ! str_starts_with($path, '/')
@@ -71,10 +94,7 @@ return [
 
     'footer_license' => filter_var(env('FOOTER_LICENSE', false), FILTER_VALIDATE_BOOLEAN),
 
-    'footer_text' => env(
-        'APP_FOOTER_TEXT',
-        'ASTRA — Adaptive Speech Transcription and Recording Assistant. All rights reserved.',
-    ),
+    'footer_brand_text' => env('APP_FOOTER_TEXT', $defaultFooterText),
 
     /*
     |--------------------------------------------------------------------------

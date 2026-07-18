@@ -1,10 +1,10 @@
-<x-app-layout title="License Help | AI Transcriber" active-page="settings">
+<x-astra.app-layout :title="'License Help | '.config('app.brand_name')" active-page="settings">
     <div class="mx-auto max-w-3xl">
         <section class="rounded-lg border border-white/10 bg-slate-950/70 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.32)] backdrop-blur-xl lg:p-7">
             <div class="flex flex-wrap items-start justify-between gap-4">
                 <div>
                     <p class="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-300">License help</p>
-                    <h1 class="mt-2 text-3xl font-semibold tracking-tight text-white">Use your AITranscriber license key</h1>
+                    <h1 class="mt-2 text-3xl font-semibold tracking-tight text-white">Use your {{ config('app.brand_name') }} license key</h1>
                     <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-400">Paste the license key issued by the API Manager into Settings, then save and test it. Available providers, models, and languages will load automatically from the server.</p>
                 </div>
 
@@ -41,4 +41,4 @@
             </div>
         </section>
     </div>
-</x-app-layout>
+</x-astra.app-layout>

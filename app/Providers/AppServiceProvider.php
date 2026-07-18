@@ -6,6 +6,7 @@ use App\Services\Audio\SpeechActivityDetector;
 use App\Services\Audio\SpeechActivityDetectorResolver;
 use App\Services\Config\AppSettingsService;
 use App\Services\Speech\OfflineWhisperModelService;
+use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\View;
 
@@ -27,7 +28,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        View::composer('components.app-layout', function ($view): void {
+        Blade::anonymousComponentPath(resource_path('views/astra/components'), 'astra');
+        Blade::anonymousComponentPath(resource_path('views/jerva/components'), 'jerva');
+        Blade::anonymousComponentPath(resource_path('views/shared/components'), 'shared');
+
+        View::composer('shared.components.app-layout', function ($view): void {
             $settings = app(AppSettingsService::class);
             $offlineModels = app(OfflineWhisperModelService::class);
 
@@ -41,12 +46,12 @@ class AppServiceProvider extends ServiceProvider
             ]);
         });
 
-        View::composer('pages.upload', function ($view): void {
+        View::composer('astra.pages.upload', function ($view): void {
             $view->with('audioChunkSeconds', app(AppSettingsService::class)->audioChunkSeconds());
         });
 
-        View::composer('components.app-header', function ($view): void {
-            $view->with('navItems', [
+        View::composer(['astra.components.app-header', 'jerva.components.app-header'], function ($view): void {
+            $navItems = [
                 [
                     'key' => 'live',
                     'label' => 'Live',
@@ -59,7 +64,20 @@ class AppServiceProvider extends ServiceProvider
                     'href' => route('transcription.upload'),
                     'icon' => 'upload',
                 ],
-            ]);
+            ];
+
+            if (config('app.edition') === 'jerva') {
+                $navItems = [
+                    [
+                        'key' => 'workspace',
+                        'label' => 'Workspace',
+                        'href' => route('transcription.workspace'),
+                        'icon' => 'workspace',
+                    ],
+                ];
+            }
+
+            $view->with('navItems', $navItems);
         });
     }
 }

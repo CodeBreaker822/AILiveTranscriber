@@ -1,17 +1,25 @@
 $(function () {
     window.requestPolishInstructions = () => {
-        const dialog = document.querySelector('[data-polish-dialog]');
+        const $dialog = $('[data-polish-dialog]');
+        const dialog = $dialog.get(0);
 
         if (!(dialog instanceof HTMLDialogElement)) {
             return Promise.resolve(null);
         }
 
-        const $dialog = $(dialog);
         const $instructions = $dialog.find('[data-polish-instructions]');
         const $error = $dialog.find('[data-polish-instructions-error]');
         const $replaceWarning = $dialog.find('[data-polish-replace-warning]');
         const $confirm = $dialog.find('[data-polish-confirm]');
         const $presets = $dialog.find('[data-polish-preset]');
+        const workspaceTheme = String($dialog.attr('data-workspace-theme') || 'false') === 'true';
+        const selectedPresetClasses = workspaceTheme
+            ? 'border-blue-600 bg-blue-600 text-white'
+            : 'border-cyan-300/40 bg-cyan-300/15 text-cyan-50';
+        const idlePresetClasses = workspaceTheme
+            ? 'border-blue-200 bg-white text-blue-900 hover:border-blue-400 hover:bg-blue-50'
+            : 'border-white/10 bg-white/[0.03] text-slate-200';
+        const allPresetStateClasses = `${selectedPresetClasses} ${idlePresetClasses}`;
         const presetInstructions = {
             'translate-en': 'Translate every non-English part of the transcript into clear English. Treat Cebuano, Bisaya, Filipino, Tagalog, and mixed code-switching as source language. Do not leave source-language words untranslated unless they are names, offices, agencies, titles, acronyms, places, or proper nouns. Preserve meaning, speaker intent, numbers, and time order.',
             'translate-fil': 'Translate every non-Filipino part of the transcript into clear Filipino. Treat English, Cebuano, Bisaya, and mixed code-switching as source language. Do not leave source-language words untranslated unless they are names, offices, agencies, titles, acronyms, places, or proper nouns. Preserve meaning, speaker intent, numbers, and time order.',
@@ -27,8 +35,8 @@ $(function () {
 
                 $(this)
                     .attr('aria-pressed', selected ? 'true' : 'false')
-                    .toggleClass('border-cyan-300/40 bg-cyan-300/15 text-cyan-50', selected)
-                    .toggleClass('border-white/10 bg-white/[0.03] text-slate-200', !selected);
+                    .removeClass(allPresetStateClasses)
+                    .addClass(selected ? selectedPresetClasses : idlePresetClasses);
             });
         };
 
@@ -47,7 +55,7 @@ $(function () {
                 $confirm.off('.polishInstructions');
                 $instructions.off('.polishInstructions');
                 $presets.off('.polishInstructions');
-                dialog.removeEventListener('close', handleClose);
+                $dialog.off('close.polishInstructions', handleClose);
                 $dialog.addClass('hidden');
                 resolve(value);
             };
@@ -57,7 +65,7 @@ $(function () {
                 }
             };
 
-            dialog.addEventListener('close', handleClose);
+            $dialog.on('close.polishInstructions', handleClose);
             $instructions.on('input.polishInstructions', () => {
                 $error.addClass('hidden');
                 syncPresetState();

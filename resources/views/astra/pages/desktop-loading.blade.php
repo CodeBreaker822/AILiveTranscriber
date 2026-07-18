@@ -1,16 +1,20 @@
+@php
+    $jervaEdition = config('app.edition') === 'jerva';
+@endphp
+
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <meta name="theme-color" content="#081018">
-        <title>Starting AITranscriber</title>
+        <meta name="theme-color" content="{{ $jervaEdition ? '#ffffff' : '#081018' }}">
+        <title>Starting {{ config('app.brand_name') }}</title>
         <style>
             :root {
-                color-scheme: dark;
+                color-scheme: {{ $jervaEdition ? 'light' : 'dark' }};
                 font-family: "Instrument Sans", "Segoe UI", sans-serif;
-                background: #071018;
-                color: #e2e8f0;
+                background: {{ $jervaEdition ? '#ffffff' : '#071018' }};
+                color: {{ $jervaEdition ? '#000000' : '#e2e8f0' }};
             }
 
             * {
@@ -19,9 +23,7 @@
 
             body {
                 align-items: center;
-                background:
-                    radial-gradient(circle at 20% 20%, rgba(34, 211, 238, 0.12), transparent 28rem),
-                    linear-gradient(180deg, #071018 0%, #0d1620 52%, #101820 100%);
+                background: {{ $jervaEdition ? '#ffffff' : 'linear-gradient(180deg, #071018 0%, #0d1620 52%, #101820 100%)' }};
                 display: flex;
                 height: 100vh;
                 justify-content: center;
@@ -49,15 +51,16 @@
             }
 
             p {
-                color: #94a3b8;
+                color: {{ $jervaEdition ? '#1e3a8a' : '#94a3b8' }};
                 font-size: 0.9rem;
                 line-height: 1.6;
                 margin: 0.75rem 0 0;
             }
 
             .track {
-                background: rgba(148, 163, 184, 0.18);
+                background: {{ $jervaEdition ? '#dbeafe' : 'rgba(148, 163, 184, 0.18)' }};
                 border-radius: 999px;
+                border: {{ $jervaEdition ? '1px solid #bfdbfe' : '0' }};
                 height: 0.5rem;
                 margin-top: 1.5rem;
                 overflow: hidden;
@@ -65,14 +68,14 @@
 
             .bar {
                 animation: load 1.25s ease-in-out infinite;
-                background: linear-gradient(90deg, #22d3ee, #34d399, #fbbf24);
+                background: {{ $jervaEdition ? '#2563eb' : 'linear-gradient(90deg, #22d3ee, #34d399, #fbbf24)' }};
                 border-radius: inherit;
                 height: 100%;
                 width: 45%;
             }
 
             .status {
-                color: #67e8f9;
+                color: {{ $jervaEdition ? '#2563eb' : '#67e8f9' }};
                 font-size: 0.72rem;
                 font-weight: 700;
                 letter-spacing: 0.18em;
@@ -93,8 +96,8 @@
     </head>
     <body>
         <main>
-            <img src="{{ asset('AILogo.png') }}" alt="">
-            <h1>Starting AITranscriber</h1>
+            <img src="{{ asset(config('app.brand_logo', 'AILogo.png')) }}" alt="">
+            <h1>Starting {{ config('app.brand_name') }}</h1>
             <p>The desktop app is preparing its local workspace and frontend assets.</p>
             <div class="track" aria-hidden="true">
                 <div class="bar"></div>

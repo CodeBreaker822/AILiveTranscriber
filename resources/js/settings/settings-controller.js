@@ -1,3 +1,5 @@
+import { notify, notifyError } from '../shared/dom.js';
+
 export const initSettingsPage = () => {
     const $speechProviderSelect = $('[data-speech-provider-select]');
     const $speechProviderPanels = $('[data-speech-provider-panel]');
@@ -7,6 +9,7 @@ export const initSettingsPage = () => {
     const $resourceMode = $('[data-resource-mode]');
     const $resourceManualInputs = $('[data-resource-manual]');
     const $resourceGpuManualInputs = $('[data-resource-gpu-manual]');
+    const $resourceAutoSummary = $('[data-resource-auto-summary]');
     const syncSpeechProviderPanels = () => {
         const selectedProvider = String($speechProviderSelect.val() || 'elevenlabs');
 
@@ -63,6 +66,7 @@ export const initSettingsPage = () => {
     const syncResourceControls = () => {
         const manual = String($resourceMode.val() || 'auto') === 'manual';
         $resourceManualInputs.prop('disabled', !manual).toggleClass('opacity-60', !manual);
+        $resourceAutoSummary.toggleClass('hidden', manual);
         $resourceGpuManualInputs.each(function () {
             const $input = $(this);
             const enabled = manual && String($input.attr('data-gpu-available') || 'false') === 'true';
@@ -74,16 +78,96 @@ export const initSettingsPage = () => {
     $resourceMode.on('change', syncResourceControls);
     syncResourceControls();
 
-    $('[data-settings-form]').on('submit', function () {
-        const $saveButton = $(this).find('[data-settings-save]');
+    const refreshSettingsUi = (payload = {}) => {
+        const data = payload.data || {};
 
-        if (typeof window.toggleLoading === 'function') {
-            window.toggleLoading($saveButton, true);
-            return;
+        if (data.provider_payload && $serverSettingsForm.length) {
+            $serverSettingsForm.attr('data-provider-models', JSON.stringify(data.provider_payload));
         }
 
-        $saveButton.prop('disabled', true);
+        if (Array.isArray(data.transcription_providers) && $serverProviderSelect.length) {
+            const selectedProvider = String(data.selected_provider || '');
+
+            $serverProviderSelect.empty();
+            data.transcription_providers.forEach((provider) => {
+                $('<option>')
+                    .val(String(provider.provider || ''))
+                    .text(String(provider.name || provider.provider || ''))
+                    .prop('selected', String(provider.provider || '') === selectedProvider)
+                    .appendTo($serverProviderSelect);
+            });
+        }
+
+        if (data.selected_model && $serverModelSelect.length) {
+            $serverModelSelect.attr('data-selected-model', String(data.selected_model || ''));
+        }
+
+        syncServerModels();
+
+        if (data.selected_model && $serverModelSelect.length) {
+            $serverModelSelect.val(String(data.selected_model || ''));
+        }
+
+        if (data.license_status_label) {
+            $('[data-settings-license-status-label]').text(String(data.license_status_label));
+        }
+
+        if (data.license_status_message) {
+            $('[data-settings-license-status-message]').text(String(data.license_status_message));
+        }
+
+        if (data.resource_profile) {
+            $('body')
+                .attr('data-resource-cpu-threads', String(data.resource_profile.cpu_threads || ''))
+                .attr('data-resource-memory-budget-mb', String(data.resource_profile.memory_budget_mb || ''))
+                .attr('data-resource-gpu-available', data.resource_profile.gpu_available ? 'true' : 'false')
+                .attr('data-resource-gpu-vram-budget-mb', String(data.resource_profile.gpu_vram_budget_mb || ''));
+        }
+    };
+
+    $('[data-settings-form]').on('submit', function (event) {
+        event.preventDefault();
+
+        const $form = $(this);
+        const nativeEvent = event.originalEvent || {};
+        const $saveButton = $(nativeEvent.submitter || $form.find('[data-settings-save]:visible').first());
+        const formData = new FormData(this);
+        const setLoading = (loading) => {
+            if (typeof window.toggleLoading === 'function' && $saveButton.length) {
+                window.toggleLoading($saveButton, loading);
+                return;
+            }
+
+            $saveButton.prop('disabled', loading);
+        };
+
+        setLoading(true);
+
+        $.ajax({
+            url: String($form.attr('action') || ''),
+            method: String($form.attr('method') || 'POST').toUpperCase(),
+            data: formData,
+            processData: false,
+            contentType: false,
+            global: false,
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        })
+            .done((response) => {
+                refreshSettingsUi(response || {});
+                notify(String(response?.message || 'Settings saved.'));
+            })
+            .fail((xhr) => {
+                const errors = xhr?.responseJSON?.errors || {};
+                const firstError = Object.values(errors).flat().find(Boolean);
+                const message = firstError || xhr?.responseJSON?.message || 'Settings could not be saved.';
+
+                notifyError(String(message));
+            })
+            .always(() => {
+                setLoading(false);
+            });
     });
-
-
 };

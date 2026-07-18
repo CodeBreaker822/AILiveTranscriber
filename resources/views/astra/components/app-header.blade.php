@@ -5,6 +5,8 @@
 
 @php
     $logoOnly = (bool) config('app.logo_only');
+    $brandShort = (string) config('app.brand_short');
+    $brandTagline = (string) config('app.brand_tagline', 'Adaptive Speech Transcription and Recording Assistant.');
     $extraLogos = $logoOnly
         ? []
         : array_values(array_filter(
@@ -25,15 +27,15 @@
                     >
                 @endforeach
                 <img
-                    src="{{ asset('AILogo.png') }}"
-                    alt="AI Transcriber"
+                    src="{{ asset(config('app.brand_logo', 'AILogo.png')) }}"
+                    alt="{{ config('app.brand_name') }}"
                     class="h-11 w-11 rounded-lg object-contain sm:h-12 sm:w-12"
                 >
             </span>
 
             <span class="min-w-0">
-                <span class="block text-xl font-semibold tracking-tight text-white sm:text-2xl">ASTRA</span>
-                <span data-brand-description class="mt-0.5 hidden text-xs text-slate-400 sm:block">Adaptive Speech Transcription and Recording Assistant.</span>
+                <span class="block text-xl font-semibold tracking-tight text-white sm:text-2xl">{{ $brandShort }}</span>
+                <span data-brand-description class="mt-0.5 hidden text-xs text-slate-400 sm:block">{{ $brandTagline }}</span>
             </span>
         </a>
 
@@ -52,12 +54,18 @@
                                 <path d="M12 18v4" />
                                 <path d="M8 22h8" />
                             </svg>
-                        @else
+                        @elseif ($item['icon'] === 'upload')
                             <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                                 <path d="M12 3v12" />
                                 <path d="m7 8 5-5 5 5" />
                                 <path d="M5 21h14" />
                                 <path d="M5 17h14" />
+                            </svg>
+                        @else
+                            <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z" />
+                                <path d="M8 9h8" />
+                                <path d="M8 13h5" />
                             </svg>
                         @endif
                         <span>{{ $item['label'] }}</span>
@@ -111,7 +119,7 @@
     </div>
 </header>
 
-@include('modals.app-update')
-@include('modals.offline-model')
+@include('astra.modals.app-update')
+@include('astra.modals.offline-model')
 <script src="{{ asset('js/modals/app-update.js') }}" defer></script>
 <script src="{{ asset('js/offline-model.js') }}" defer></script>

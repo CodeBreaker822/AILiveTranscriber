@@ -1,3 +1,5 @@
+const appBrandName = () => String(document.body?.dataset?.appBrandName || 'the app').trim();
+
 export const buildUploadErrorMessage = (xhr, item) => {
     const clipName = item ? `Clip ${item.index}` : 'This clip';
     const serverMessage = String(xhr?.responseJSON?.message || '').trim();
@@ -51,7 +53,7 @@ export const buildUploadSessionErrorMessage = (xhr) => {
     }
 
     if (fieldErrors.local_path?.length) {
-        return 'AITranscriber could not read that selected file. Choose the file again and try.';
+        return `${appBrandName()} could not read that selected file. Choose the file again and try.`;
     }
 
     if (fieldErrors.chunk_seconds?.length) {
@@ -59,7 +61,7 @@ export const buildUploadSessionErrorMessage = (xhr) => {
     }
 
     if (fieldErrors.duration_ms?.length) {
-        return 'AITranscriber could not measure this audio file. Choose the file again and try.';
+        return `${appBrandName()} could not measure this audio file. Choose the file again and try.`;
     }
 
     if (serverMessage) {

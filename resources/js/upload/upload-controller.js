@@ -1,7 +1,7 @@
 import { buildUploadSessionErrorMessage } from '../shared/api-errors.js';
 import { escapeHtml, notify, notifyError, readNearbyControlValue, withButtonLoading } from '../shared/dom.js';
 import { exportTranscriptRows } from '../shared/export-service.js';
-import { formatBytes, formatClipRange, formatClock, sortByTimeAscending } from '../shared/formatters.js';
+import { formatBytes, formatClipRange, formatClock, formatRelativeClock, sortByTimeAscending } from '../shared/formatters.js';
 import { clampProgressPercent, createPhaseProgress, phaseProgressAverage, phaseProgressSummary } from '../shared/progress.js';
 import { normalizeStoredItem } from '../shared/normalize.js';
 import {
@@ -466,11 +466,33 @@ export const initUploadPage = (context) => {
         monitorQueuedDiarization(uniqueIds, 450, uploadState.activeDiarizationMonitorGeneration);
     };
 
+    const uploadStoredItemRecency = (item) => {
+        const timestamp = Date.parse(item.updatedAt || item.updated_at || item.createdAt || item.created_at || '');
+        const id = Number(item.id || 0);
+
+        return Number.isFinite(timestamp) ? timestamp : (Number.isFinite(id) ? id : 0);
+    };
+
     const syncUploadCategoriesFromStoredItems = () => {
-        uploadState.uploadCategories = [...new Set(uploadState.uploadStoredItems
-            .map((item) => String(item.categoryName || '').trim())
-            .filter(Boolean))]
-            .sort((first, second) => first.localeCompare(second));
+        const categories = new Map();
+
+        uploadState.uploadStoredItems.forEach((item) => {
+            const category = String(item.categoryName || '').trim();
+            if (!category) {
+                return;
+            }
+
+            const key = category.toLowerCase();
+            const recency = uploadStoredItemRecency(item);
+            const existing = categories.get(key);
+            if (!existing || recency > existing.recency) {
+                categories.set(key, { name: category, recency });
+            }
+        });
+
+        uploadState.uploadCategories = Array.from(categories.values())
+            .sort((first, second) => second.recency - first.recency || first.name.localeCompare(second.name))
+            .map((category) => category.name);
     };
 
     const setUploadStoredItemPlaybackState = (itemId, playing) => {
@@ -521,12 +543,12 @@ export const initUploadPage = (context) => {
         uploadState.activeUploadAudio.preload = 'metadata';
         uploadState.activeUploadAudioId = item.id;
 
-        uploadState.activeUploadAudio.addEventListener('ended', () => {
+        $(uploadState.activeUploadAudio).on('ended', () => {
             setUploadStoredItemPlaybackState(item.id, false);
             uploadState.activeUploadAudio = null;
             uploadState.activeUploadAudioId = null;
         });
-        uploadState.activeUploadAudio.addEventListener('pause', () => {
+        $(uploadState.activeUploadAudio).on('pause', () => {
             if (uploadState.activeUploadAudioId === item.id && uploadState.activeUploadAudio?.paused) {
                 setUploadStoredItemPlaybackState(item.id, false);
             }
@@ -848,7 +870,7 @@ export const initUploadPage = (context) => {
         if (!logs.length) {
             $transcriptList.html(`
                 <div class="w-full py-4">
-                    <p class="text-sm text-slate-200">No processing logs found for ${escapeHtml(categoryName)}.</p>
+                    <p class="text-sm text-blue-900">No processing logs found for ${escapeHtml(categoryName)}.</p>
                 </div>
             `);
             return;
@@ -857,32 +879,32 @@ export const initUploadPage = (context) => {
         $transcriptList.html(logs.map((log) => {
             const segments = Array.isArray(log.speech_segments) ? log.speech_segments : [];
             const statusClasses = log.speech_detected
-                ? 'border-emerald-300/20 bg-emerald-300/10 text-emerald-100'
-                : 'border-amber-300/20 bg-amber-300/10 text-amber-100';
+                ? 'border-blue-200 bg-blue-50 text-blue-800'
+                : 'border-blue-300 bg-white text-blue-900';
             const statusLabel = log.speech_detected ? 'Speech' : 'No speech';
             const segmentHtml = segments.length
                 ? segments.map((segment, index) => `
-                    <div class="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2">
-                        <p class="text-[0.66rem] font-semibold uppercase tracking-[0.18em] text-cyan-300">Segment ${index + 1}</p>
-                        <p class="mt-1 text-xs text-white">${formatClock(Number(segment.absolute_start_ms || 0))}-${formatClock(Number(segment.absolute_end_ms || 0))}</p>
-                        <p class="mt-0.5 text-[0.68rem] text-slate-400">Inside clip ${formatRelativeClock(Number(segment.start_ms || 0))}-${formatRelativeClock(Number(segment.end_ms || 0))}</p>
+                    <div class="rounded-lg border border-blue-100 bg-blue-50/50 px-3 py-2">
+                        <p class="text-xs font-semibold uppercase text-blue-700">Segment ${index + 1}</p>
+                        <p class="mt-1 text-sm font-semibold text-black">${formatClock(Number(segment.absolute_start_ms || 0))}-${formatClock(Number(segment.absolute_end_ms || 0))}</p>
+                        <p class="mt-0.5 text-xs text-blue-900">Inside clip ${formatRelativeClock(Number(segment.start_ms || 0))}-${formatRelativeClock(Number(segment.end_ms || 0))}</p>
                     </div>
                 `).join('')
-                : '<p class="text-xs text-slate-400">Hosted transcription skipped for this range.</p>';
+                : '<p class="text-xs text-blue-900">Hosted transcription skipped for this range.</p>';
 
             return `
-                <article class="w-full border-b border-white/8 py-2.5 last:border-b-0">
+                <article class="w-full border-b border-blue-100 py-4 last:border-b-0">
                     <div class="flex flex-wrap items-start justify-between gap-2">
                         <div>
-                            <p class="text-xs font-medium leading-5 tracking-[0.14em] text-cyan-300">${escapeHtml(log.range_label || '')}</p>
-                            <p class="mt-0.5 text-[0.68rem] text-slate-400">Clip ${Number(log.clip_index || 0)} · ${formatClock(Number(log.clip_start_ms || 0))}-${formatClock(Number(log.clip_end_ms || 0))}</p>
+                            <p class="text-sm font-semibold leading-6 text-blue-700">${escapeHtml(log.range_label || '')}</p>
+                            <p class="mt-0.5 text-xs text-blue-900">Clip ${Number(log.clip_index || 0)} - ${formatClock(Number(log.clip_start_ms || 0))}-${formatClock(Number(log.clip_end_ms || 0))}</p>
                         </div>
-                        <span class="rounded-lg border px-2 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.16em] ${statusClasses}">${statusLabel}</span>
+                        <span class="rounded-lg border px-2.5 py-1 text-xs font-semibold uppercase ${statusClasses}">${statusLabel}</span>
                     </div>
                     <div class="mt-2 grid gap-2 sm:grid-cols-2">
                         ${segmentHtml}
                     </div>
-                    <p class="mt-2 text-[0.68rem] text-slate-500">Speech ${formatClock(Number(log.speech_duration_ms || 0))} · Filtered ${formatBytes(Number(log.filtered_size_bytes || 0))}</p>
+                    <p class="mt-2 text-xs font-medium text-blue-950">Speech ${formatClock(Number(log.speech_duration_ms || 0))} - Filtered ${formatBytes(Number(log.filtered_size_bytes || 0))}</p>
                 </article>
             `;
         }).join(''));
@@ -1152,7 +1174,10 @@ export const initUploadPage = (context) => {
             return;
         }
 
-        uploadState.uploadCategories = [...uploadState.uploadCategories, category].sort((first, second) => first.localeCompare(second));
+        uploadState.uploadCategories = [
+            category,
+            ...uploadState.uploadCategories.filter((item) => item.toLowerCase() !== category.toLowerCase()),
+        ];
         refreshUploadCategorySuggestions();
     };
 
@@ -1803,13 +1828,14 @@ export const initUploadPage = (context) => {
                 const xhr = $.ajaxSettings.xhr();
 
                 if (xhr.upload) {
-                    xhr.upload.addEventListener('progress', (event) => {
-                        if (!event.lengthComputable) {
+                    $(xhr.upload).on('progress', (event) => {
+                        const progressEvent = event.originalEvent || event;
+                        if (!progressEvent.lengthComputable) {
                             $status.text('Uploading source');
                             return;
                         }
 
-                        const percent = Math.max(0, Math.min(100, Math.round((event.loaded / event.total) * 100)));
+                        const percent = Math.max(0, Math.min(100, Math.round((progressEvent.loaded / progressEvent.total) * 100)));
                         $status.text(`Uploading source ${percent}%`);
                     });
                 }
@@ -1897,18 +1923,18 @@ export const initUploadPage = (context) => {
         audio.preload = 'metadata';
         audio.src = uploadState.metadataUrl;
 
-        audio.addEventListener('loadedmetadata', () => {
+        $(audio).one('loadedmetadata', () => {
             uploadState.selectedDurationMs = Number.isFinite(audio.duration) && audio.duration > 0
                 ? audio.duration * 1000
                 : 0;
 
             syncPlan();
-        }, { once: true });
+        });
 
-        audio.addEventListener('error', () => {
-        uploadState.selectedDurationMs = Number(file?.durationMs || 0);
+        $(audio).one('error', () => {
+            uploadState.selectedDurationMs = Number(file?.durationMs || 0);
             syncPlan();
-        }, { once: true });
+        });
     };
 
     $fileInput.on('click', async function (event) {
@@ -2199,7 +2225,7 @@ export const initUploadPage = (context) => {
         releaseSpeakerSession(speakerSessionId);
     });
 
-    window.addEventListener('pagehide', () => {
+    $(window).on('pagehide', () => {
         releaseSpeakerSession(uploadState.currentSessionId, true);
     });
 

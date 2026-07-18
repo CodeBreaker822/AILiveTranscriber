@@ -1,11 +1,21 @@
 import { spawn } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { cleanReleaseCache } from './clean-tauri-cache.mjs';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const emptyBuild = process.argv[2] === 'empty';
+const cliArgs = process.argv.slice(2).map((arg) => String(arg).toLowerCase());
+const emptyBuild = cliArgs.includes('empty');
+const editionAliases = new Map([
+    ['dilg', 'dilg'],
+    ['astra', 'dilg'],
+    ['jerva', 'jerva'],
+]);
+const requestedEdition = cliArgs.map((arg) => editionAliases.get(arg)).find(Boolean)
+    || editionAliases.get(String(process.env.AI_TRANSCRIBER_EDITION || '').toLowerCase())
+    || editionAliases.get(String(process.env.APP_EDITION || '').toLowerCase())
+    || 'dilg';
 const vulkanBuild = process.argv.includes('vulkan') || process.env.AI_TRANSCRIBER_ENABLE_VULKAN === '1';
 
 function findVulkanSdk() {
@@ -51,7 +61,18 @@ const tauriCli = path.join(
     'cli',
     'tauri.js',
 );
-const args = ['build', '--config', 'tauri.release.conf.json'];
+const brandConfig = requestedEdition === 'jerva' ? 'tauri.jerva.conf.json' : 'tauri.dilg.conf.json';
+const brandConfigJson = JSON.parse(readFileSync(path.join(projectRoot, brandConfig), 'utf8'));
+
+if (
+    requestedEdition === 'jerva'
+    && brandConfigJson?.plugins?.updater?.pubkey === 'JERVA_UPDATER_PUBLIC_KEY_NOT_CONFIGURED'
+) {
+    console.error('JERVA updater public key is not configured. Generate a separate JERVA Tauri signing key, then place its public key in tauri.jerva.conf.json.');
+    process.exit(1);
+}
+
+const args = ['build', '--config', 'tauri.release.conf.json', '--config', brandConfig];
 
 if (emptyBuild) {
     args.push('--config', 'tauri.empty.conf.json');
@@ -63,7 +84,11 @@ if (vulkanBuild) {
 
 const child = spawn(process.execPath, [tauriCli, ...args], {
     cwd: projectRoot,
-    env: vulkanSdk ? { ...process.env, VULKAN_SDK: vulkanSdk } : process.env,
+    env: {
+        ...process.env,
+        AI_TRANSCRIBER_EDITION: requestedEdition,
+        ...(vulkanSdk ? { VULKAN_SDK: vulkanSdk } : {}),
+    },
     stdio: 'inherit',
     windowsHide: true,
 });

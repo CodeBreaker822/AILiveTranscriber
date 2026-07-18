@@ -11,6 +11,14 @@ fn main() {
         .get("version")
         .and_then(serde_json::Value::as_str)
         .expect("Tauri configuration is missing its version");
+    let brand_name = match std::env::var("AI_TRANSCRIBER_EDITION")
+        .unwrap_or_else(|_| "dilg".to_string())
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "jerva" => "JERVA Transcriber",
+        _ => "ASTRA AI Transcriber",
+    };
     let version_path = manifest_dir.join("../build/tauri/version.json");
     std::fs::create_dir_all(
         version_path
@@ -23,7 +31,7 @@ fn main() {
         format!(
             "{{\n  \"version\": {},\n  \"notes\": {}\n}}\n",
             serde_json::to_string(version).expect("failed to encode version"),
-            serde_json::to_string(&format!("AITranscriber {version} update."))
+            serde_json::to_string(&format!("{brand_name} {version} update."))
                 .expect("failed to encode default release notes"),
         ),
     )

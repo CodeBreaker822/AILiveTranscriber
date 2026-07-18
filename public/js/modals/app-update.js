@@ -1,5 +1,6 @@
 $(function () {
-    const dialog = document.querySelector('[data-app-update-dialog]');
+    const $dialog = $('[data-app-update-dialog]');
+    const dialog = $dialog.get(0);
 
     if (!(dialog instanceof HTMLDialogElement) || window.__aiTranscriberUpdateCheckStarted) {
         return;
@@ -7,7 +8,6 @@ $(function () {
 
     window.__aiTranscriberUpdateCheckStarted = true;
 
-    const $dialog = $(dialog);
     const $title = $dialog.find('[data-app-update-title]');
     const $message = $dialog.find('[data-app-update-message]');
     const $notes = $dialog.find('[data-app-update-notes]');
@@ -16,7 +16,8 @@ $(function () {
     const $bar = $dialog.find('[data-app-update-progress-bar]');
     const $actions = $dialog.find('[data-app-update-actions]');
     const $retry = $dialog.find('[data-app-update-retry]');
-    const desktopDev = document.body.dataset.desktopDev === 'true';
+    const desktopDev = $('body').attr('data-desktop-dev') === 'true';
+    const appBrandName = String($('body').attr('data-app-brand-name') || 'the app').trim();
     let updateStatus = null;
     let running = false;
     let unlistenProgress = null;
@@ -76,8 +77,8 @@ $(function () {
 
             if (status === 'downloaded') {
                 setProgress(100, 'Installing');
-                $title.text('Restarting AITranscriber');
-                $message.text('The update is verified. AITranscriber will close, install it, and reopen.');
+                $title.text(`Restarting ${appBrandName}`);
+                $message.text(`The update is verified. ${appBrandName} will close, install it, and reopen.`);
                 return;
             }
 
@@ -102,7 +103,7 @@ $(function () {
         running = true;
         $actions.addClass('hidden').removeClass('flex');
         $title.text('Updating');
-        $message.text(`Downloading AITranscriber ${updateStatus.version}...`);
+        $message.text(`Downloading ${appBrandName} ${updateStatus.version}...`);
         setProgress(0, 'Connecting');
 
         try {
