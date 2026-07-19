@@ -4,7 +4,7 @@
     'focusedWorkspace' => false,
 ])
 
-<x-shared.app-layout
+<x-shared::app-layout
     :title="$title"
     :active-page="$activePage"
     :focused-workspace="$focusedWorkspace"
@@ -13,4 +13,4 @@
     modal-namespace="astra.modals"
 >
     {{ $slot }}
-</x-shared.app-layout>
+</x-shared::app-layout>

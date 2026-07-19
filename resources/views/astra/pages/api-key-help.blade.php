@@ -1,4 +1,4 @@
-<x-astra.app-layout :title="'License Help | '.config('app.brand_name')" active-page="settings">
+<x-astra::app-layout :title="'License Help | '.config('app.brand_name')" active-page="settings">
     <div class="mx-auto max-w-3xl">
         <section class="rounded-lg border border-white/10 bg-slate-950/70 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.32)] backdrop-blur-xl lg:p-7">
             <div class="flex flex-wrap items-start justify-between gap-4">
@@ -41,4 +41,4 @@
             </div>
         </section>
     </div>
-</x-astra.app-layout>
+</x-astra::app-layout>
