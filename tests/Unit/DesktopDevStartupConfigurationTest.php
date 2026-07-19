@@ -43,24 +43,36 @@ class DesktopDevStartupConfigurationTest extends TestCase
         $this->assertSame('#071018', $tauri['app']['windows'][0]['backgroundColor']);
     }
 
-    public function test_windows_build_treats_the_vulkan_loader_as_optional(): void
+    public function test_windows_build_does_not_package_gpu_runtimes(): void
     {
-        $script = file_get_contents(dirname(__DIR__, 2).'/scripts/prepare-desktop.mjs');
+        $preparer = file_get_contents(dirname(__DIR__, 2).'/scripts/prepare-desktop.mjs');
+        $releaseConfig = file_get_contents(dirname(__DIR__, 2).'/tauri.release.conf.json');
 
-        $this->assertStringContainsString('process.env.VULKAN_SDK', $script);
-        $this->assertStringContainsString("'System32', 'vulkan-1.dll'", $script);
-        $this->assertStringContainsString('return;', $script);
-        $this->assertStringContainsString('copyFileSync(source, destination)', $script);
+        $this->assertStringNotContainsString('vulkan-1.dll', $preparer);
+        $this->assertStringNotContainsString('copyFileSync', $preparer);
+        $this->assertStringNotContainsString('vulkan-1.dll', $releaseConfig);
     }
 
-    public function test_release_builder_makes_vulkan_an_explicit_opt_in_feature(): void
+    public function test_release_builder_packages_gpu_backends_as_optional_workers(): void
     {
         $script = file_get_contents(dirname(__DIR__, 2).'/scripts/build-desktop.mjs');
+        $releaseConfig = file_get_contents(dirname(__DIR__, 2).'/tauri.release.conf.json');
 
-        $this->assertStringContainsString('const vulkanBuild', $script);
-        $this->assertStringContainsString('vulkanBuild && !vulkanSdk', $script);
-        $this->assertStringContainsString("args.push('--features', 'vulkan')", $script);
-        $this->assertStringContainsString('env: vulkanSdk ? { ...process.env, VULKAN_SDK: vulkanSdk } : process.env', $script);
+        $this->assertStringContainsString('const gpuBuildRequired', $script);
+        $this->assertStringContainsString('const cudaBuildRequired', $script);
+        $this->assertStringContainsString('const vulkanBuildRequired', $script);
+        $this->assertStringContainsString('function findCudaToolkit()', $script);
+        $this->assertStringContainsString('CUDA_PATH', $script);
+        $this->assertStringContainsString('cublasLt.lib', $script);
+        $this->assertStringContainsString('cudaBuildRequired && !cudaToolkit', $script);
+        $this->assertStringContainsString('vulkanBuildRequired && !vulkanSdk', $script);
+        $this->assertStringContainsString("buildOfflineWhisperWorker('vulkan', 'vulkan'", $script);
+        $this->assertStringContainsString("buildOfflineWhisperWorker('cuda', 'cuda'", $script);
+        $this->assertStringContainsString('offline-whisper-${backend}.exe', $script);
+        $this->assertStringContainsString('AI_TRANSCRIBER_EDITION: requestedEdition', $script);
+        $this->assertStringNotContainsString("args.push('--features', 'vulkan')", $script);
+        $this->assertStringNotContainsString("args.push('--features', 'cuda')", $script);
+        $this->assertStringContainsString('../build/tauri/workers', $releaseConfig);
         $this->assertStringContainsString('KhronosGroup.VulkanSDK', $script);
     }
     public function test_php_launchers_base_memory_budget_on_physical_ram_not_current_free_ram(): void

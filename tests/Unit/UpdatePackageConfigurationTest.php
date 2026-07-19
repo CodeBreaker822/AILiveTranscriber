@@ -48,6 +48,33 @@ class UpdatePackageConfigurationTest extends TestCase
         $this->assertStringNotContainsString('git ls-files', $script);
     }
 
+    public function test_tauri_editions_have_separate_windows_install_identities(): void
+    {
+        $root = dirname(__DIR__, 2);
+        $base = json_decode(file_get_contents($root.'/src-tauri/tauri.conf.json'), true, 512, JSON_THROW_ON_ERROR);
+        $dilg = json_decode(file_get_contents($root.'/tauri.dilg.conf.json'), true, 512, JSON_THROW_ON_ERROR);
+        $jerva = json_decode(file_get_contents($root.'/tauri.jerva.conf.json'), true, 512, JSON_THROW_ON_ERROR);
+        $packager = file_get_contents($root.'/scripts/create-update-package.mjs');
+        $main = file_get_contents($root.'/src-tauri/src/main.rs');
+        $devLauncher = file_get_contents($root.'/scripts/start-tauri-dev.ps1');
+
+        $this->assertSame('ASTRA AI Transcriber', $dilg['productName']);
+        $this->assertSame('astra-transcriber', $dilg['mainBinaryName']);
+        $this->assertSame('com.astra.transcriber', $dilg['identifier']);
+
+        $this->assertSame('JERVA Transcriber', $jerva['productName']);
+        $this->assertSame('jerva-transcriber', $jerva['mainBinaryName']);
+        $this->assertSame('com.jerva.transcriber', $jerva['identifier']);
+
+        $this->assertSame($dilg['mainBinaryName'], $base['mainBinaryName']);
+        $this->assertStringContainsString('jerva-transcriber.exe', $packager);
+        $this->assertStringContainsString('astra-transcriber.exe', $packager);
+        $this->assertStringContainsString('LOCALAPPDATA', $main);
+        $this->assertStringContainsString('app_data_folder_name()', $main);
+        $this->assertStringContainsString('CARGO_TARGET_DIR', $devLauncher);
+        $this->assertStringContainsString('target-dev-$($selectedEdition.Key)', $devLauncher);
+    }
+
     public function test_public_app_repository_readme_is_user_facing_distribution_guidance(): void
     {
         $readme = file_get_contents(dirname(__DIR__, 2).'/release/AITranscriberAPP/README.template.md');
@@ -85,6 +112,9 @@ class UpdatePackageConfigurationTest extends TestCase
         $this->assertStringContainsString("serverApiPath: '/api/transcribe/update/zipfile'", $script);
         $this->assertStringContainsString("'ggml-large-v3-turbo-q8_0.bin'", $script);
         $this->assertStringNotContainsString("'vulkan-1.dll'", $script);
+        $this->assertStringNotContainsString("'cudart64", $script);
+        $this->assertStringNotContainsString("'cublas64", $script);
+        $this->assertStringNotContainsString("'nvcuda.dll'", $script);
     }
 
     public function test_generated_database_and_process_artifacts_stay_out_of_git_and_update_packages(): void
@@ -121,6 +151,9 @@ class UpdatePackageConfigurationTest extends TestCase
         $this->assertSame('onnxruntime.dll', $resources['target/release/onnxruntime.dll'] ?? null);
         $this->assertSame('onnxruntime_providers_shared.dll', $resources['target/release/onnxruntime_providers_shared.dll'] ?? null);
         $this->assertArrayNotHasKey('target/release/vulkan-1.dll', $resources);
+        $this->assertArrayNotHasKey('target/release/cudart64_12.dll', $resources);
+        $this->assertArrayNotHasKey('target/release/cublas64_12.dll', $resources);
+        $this->assertArrayNotHasKey('target/release/nvcuda.dll', $resources);
     }
 
     public function test_runtime_executables_stay_as_resources_until_a_sidecar_contract_is_needed(): void

@@ -78,7 +78,9 @@ class AppUpdateService
 
     public function archivePath(): string
     {
-        return storage_path('app/private/app-updates/AITranscriber-update.zip');
+        $edition = config('app.edition') === 'jerva' ? 'jerva' : 'astra';
+
+        return storage_path("app/private/app-updates/{$edition}-transcriber-update.zip");
     }
 
     public function prepareArchiveDirectory(): void

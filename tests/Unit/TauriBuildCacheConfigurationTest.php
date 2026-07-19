@@ -59,7 +59,7 @@ class TauriBuildCacheConfigurationTest extends TestCase
         $main = file_get_contents($root.'/src-tauri/src/main.rs');
         $config = file_get_contents($root.'/src-tauri/tauri.conf.json');
 
-        $this->assertStringContainsString('compile_error!("AITranscriber desktop builds are supported on Windows only.")', $main);
+        $this->assertStringContainsString('compile_error!("Desktop builds are supported on Windows only.")', $main);
         $this->assertStringNotContainsString('xdg-open', $main);
         $this->assertStringNotContainsString('target_os = "macos"', $main);
         $this->assertStringNotContainsString('icons/icon.icns', $config);

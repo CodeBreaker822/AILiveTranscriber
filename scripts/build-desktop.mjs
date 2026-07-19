@@ -1,5 +1,5 @@
-import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { cleanReleaseCache } from './clean-tauri-cache.mjs';
@@ -16,7 +16,9 @@ const requestedEdition = cliArgs.map((arg) => editionAliases.get(arg)).find(Bool
     || editionAliases.get(String(process.env.AI_TRANSCRIBER_EDITION || '').toLowerCase())
     || editionAliases.get(String(process.env.APP_EDITION || '').toLowerCase())
     || 'dilg';
-const vulkanBuild = process.argv.includes('vulkan') || process.env.AI_TRANSCRIBER_ENABLE_VULKAN === '1';
+const gpuBuildRequired = process.argv.includes('gpu') || process.env.AI_TRANSCRIBER_ENABLE_GPU === '1';
+const cudaBuildRequired = gpuBuildRequired || process.argv.includes('cuda') || process.env.AI_TRANSCRIBER_ENABLE_CUDA === '1';
+const vulkanBuildRequired = gpuBuildRequired || process.argv.includes('vulkan') || process.env.AI_TRANSCRIBER_ENABLE_VULKAN === '1';
 
 function findVulkanSdk() {
     const configured = String(process.env.VULKAN_SDK || '').trim();
@@ -39,16 +41,48 @@ function findVulkanSdk() {
         && existsSync(path.join(candidate, 'Include', 'vulkan', 'vulkan.h')));
 }
 
+function findCudaToolkit() {
+    const configured = String(process.env.CUDA_PATH || '').trim();
+    const toolkitRoot = 'C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA';
+    const candidates = [
+        configured,
+        ...(
+            existsSync(toolkitRoot)
+                ? readdirSync(toolkitRoot, { withFileTypes: true })
+                    .filter((entry) => entry.isDirectory())
+                    .map((entry) => path.join(toolkitRoot, entry.name))
+                    .sort((left, right) => right.localeCompare(left, undefined, { numeric: true }))
+                : []
+        ),
+    ];
+
+    return candidates.find((candidate) => candidate
+        && existsSync(path.join(candidate, 'bin', 'nvcc.exe'))
+        && existsSync(path.join(candidate, 'lib', 'x64', 'cuda.lib'))
+        && existsSync(path.join(candidate, 'lib', 'x64', 'cudart.lib'))
+        && existsSync(path.join(candidate, 'lib', 'x64', 'cublas.lib'))
+        && existsSync(path.join(candidate, 'lib', 'x64', 'cublasLt.lib')));
+}
+
 if (process.platform !== 'win32') {
-    console.error('AITranscriber desktop releases must be built on Windows.');
+    console.error('Desktop releases must be built on Windows.');
     process.exit(1);
 }
 
-const vulkanSdk = vulkanBuild ? findVulkanSdk() : null;
+const cudaToolkit = findCudaToolkit();
+const vulkanSdk = findVulkanSdk();
 
-if (vulkanBuild && !vulkanSdk) {
+if (cudaBuildRequired && !cudaToolkit) {
     console.error(
-        'The Vulkan SDK is required only for Vulkan-enabled builds. Install it with '
+        'The CUDA Toolkit is required to build the optional CUDA worker. Install it on the build machine, '
+        + 'or run the normal build without the `cuda`/`gpu` flag. CUDA runtime DLLs are not bundled for users.',
+    );
+    process.exit(1);
+}
+
+if (vulkanBuildRequired && !vulkanSdk) {
+    console.error(
+        'The Vulkan SDK is required to build the optional Vulkan worker. Install it with '
         + '`winget install --exact --id KhronosGroup.VulkanSDK`, then rerun this command.',
     );
     process.exit(1);
@@ -61,6 +95,8 @@ const tauriCli = path.join(
     'cli',
     'tauri.js',
 );
+const userCargo = path.join(String(process.env.USERPROFILE || ''), '.cargo', 'bin', 'cargo.exe');
+const cargo = existsSync(userCargo) ? userCargo : 'cargo';
 const brandConfig = requestedEdition === 'jerva' ? 'tauri.jerva.conf.json' : 'tauri.dilg.conf.json';
 const brandConfigJson = JSON.parse(readFileSync(path.join(projectRoot, brandConfig), 'utf8'));
 
@@ -72,14 +108,60 @@ if (
     process.exit(1);
 }
 
+const workerDirectory = path.join(projectRoot, 'build', 'tauri', 'workers');
+rmSync(workerDirectory, { recursive: true, force: true });
+mkdirSync(workerDirectory, { recursive: true });
+
+function buildOfflineWhisperWorker(backend, feature, env) {
+    const cargoArgs = ['build', '--release', '--bin', 'offline-whisper-worker'];
+
+    if (feature) {
+        cargoArgs.push('--features', feature);
+    }
+
+    const result = spawnSync(cargo, cargoArgs, {
+        cwd: path.join(projectRoot, 'src-tauri'),
+        env: {
+            ...process.env,
+            ...env,
+        },
+        stdio: 'inherit',
+        windowsHide: true,
+    });
+
+    if (result.status !== 0) {
+        throw new Error(`Failed to build the optional ${backend} offline Whisper worker.`);
+    }
+
+    copyFileSync(
+        path.join(projectRoot, 'src-tauri', 'target', 'release', 'offline-whisper-worker.exe'),
+        path.join(workerDirectory, `offline-whisper-${backend}.exe`),
+    );
+}
+
+try {
+    if (cudaToolkit) {
+        console.log('Building optional CUDA offline Whisper worker.');
+        buildOfflineWhisperWorker('cuda', 'cuda', { CUDA_PATH: cudaToolkit });
+    } else {
+        console.log('Skipping optional CUDA offline Whisper worker; CUDA Toolkit is not installed on this build machine.');
+    }
+
+    if (vulkanSdk) {
+        console.log('Building optional Vulkan offline Whisper worker.');
+        buildOfflineWhisperWorker('vulkan', 'vulkan', { VULKAN_SDK: vulkanSdk });
+    } else {
+        console.log('Skipping optional Vulkan offline Whisper worker; Vulkan SDK is not installed on this build machine.');
+    }
+} catch (error) {
+    console.error(error.message);
+    process.exit(1);
+}
+
 const args = ['build', '--config', 'tauri.release.conf.json', '--config', brandConfig];
 
 if (emptyBuild) {
     args.push('--config', 'tauri.empty.conf.json');
-}
-
-if (vulkanBuild) {
-    args.push('--features', 'vulkan');
 }
 
 const child = spawn(process.execPath, [tauriCli, ...args], {
@@ -87,6 +169,7 @@ const child = spawn(process.execPath, [tauriCli, ...args], {
     env: {
         ...process.env,
         AI_TRANSCRIBER_EDITION: requestedEdition,
+        ...(cudaToolkit ? { CUDA_PATH: cudaToolkit } : {}),
         ...(vulkanSdk ? { VULKAN_SDK: vulkanSdk } : {}),
     },
     stdio: 'inherit',

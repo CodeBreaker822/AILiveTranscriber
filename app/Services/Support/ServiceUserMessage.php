@@ -4,6 +4,11 @@ namespace App\Services\Support;
 
 class ServiceUserMessage
 {
+    private static function brandName(): string
+    {
+        return trim((string) config('app.brand_name', config('app.name', 'Transcriber'))) ?: 'Transcriber';
+    }
+
     public static function missingApiKey(string $provider): string
     {
         return "Add your {$provider} API key in Settings before continuing.";
@@ -11,7 +16,7 @@ class ServiceUserMessage
 
     public static function cannotReachProvider(string $provider): string
     {
-        return "AITranscriber could not contact {$provider}. Please try again shortly.";
+        return self::brandName()." could not contact {$provider}. Please try again shortly.";
     }
 
     public static function providerRejectedKey(string $provider): string
@@ -46,7 +51,7 @@ class ServiceUserMessage
 
     public static function invalidCleanerResponse(): string
     {
-        return 'Transcript polisher returned a response AITranscriber could not use. Please try again.';
+        return 'Transcript polisher returned a response '.self::brandName().' could not use. Please try again.';
     }
 
     public static function cleanerMissingChunks(): string
@@ -56,12 +61,12 @@ class ServiceUserMessage
 
     public static function audioReadFailed(): string
     {
-        return 'AITranscriber could not read this audio file. Please choose the file again and try.';
+        return self::brandName().' could not read this audio file. Please choose the file again and try.';
     }
 
     public static function audioPrepareFailed(): string
     {
-        return 'AITranscriber could not prepare this audio. Please try another audio file.';
+        return self::brandName().' could not prepare this audio. Please try another audio file.';
     }
 
     public static function uploadSessionExpired(): string

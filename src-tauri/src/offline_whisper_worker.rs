@@ -187,6 +187,14 @@ fn handle(
             *engine = None;
             serde_json::json!({ "released": true })
         }
+        Ok(request) if request.action.as_deref() == Some("cancel") => {
+            let cancelled = request
+                .progress_id
+                .as_deref()
+                .map(cancel)
+                .unwrap_or(false);
+            serde_json::json!({ "cancelled": cancelled })
+        }
         Ok(request) => {
             let result = catch_unwind(AssertUnwindSafe(|| {
                 transcribe(request, default_threads, engine, progress)

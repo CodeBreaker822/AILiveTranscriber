@@ -44,12 +44,29 @@
                 <p data-chat-conversations-empty class="px-3 py-3 text-sm text-slate-500">No transcripts yet.</p>
             </div>
         </div>
+
+        <footer class="shrink-0 border-t border-blue-100 bg-white p-3">
+            <div data-chat-plan-online class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                    <p class="text-sm font-semibold text-black">Free Plan</p>
+                    <p class="truncate text-xs font-medium text-blue-900">Sign in when accounts are ready.</p>
+                </div>
+                <button type="button" data-chat-sign-in class="h-10 shrink-0 cursor-pointer rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700">
+                    Sign in
+                </button>
+            </div>
+
+            <div data-chat-plan-offline class="hidden">
+                <p class="text-sm font-semibold text-black">Free workspace</p>
+                <p class="mt-0.5 text-xs font-medium text-blue-900">Offline transcription</p>
+            </div>
+        </footer>
     </aside>
 
     <section class="flex min-h-0 flex-col bg-white">
         <header class="flex h-[72px] shrink-0 items-center justify-between border-b border-slate-200 px-6">
             <div class="flex min-w-0 items-center gap-3">
-                <label class="min-w-56">
+                <label data-whisper-model-control class="hidden min-w-56">
                     <span class="sr-only">Model</span>
                     <select data-whisper-model class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100">
                         @foreach ($whisperModels as $model)
@@ -116,8 +133,8 @@
                 </div>
             </div>
 
-            <div data-chat-command-area class="hidden shrink-0 border-t border-slate-200 bg-white px-6 py-4">
-                <div data-chat-transcript-actions="live" class="mx-auto mb-3 hidden max-w-[56rem] items-center justify-center gap-2">
+            <div data-chat-command-area class="hidden shrink-0 flex-wrap items-center justify-center gap-3 border-t border-slate-200 bg-white px-6 py-3 flex" data-chat-command-dock>
+                <div data-chat-transcript-actions="live" class="order-2 hidden items-center gap-2 rounded-lg border border-blue-100 bg-white p-1.5 shadow-[0_12px_32px_rgba(15,23,42,0.08)]">
                     <button type="button" data-furnish-live class="inline-flex h-11 cursor-pointer items-center rounded-lg border border-blue-200 bg-blue-50 px-3 text-sm font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-100">Polish</button>
                     <button type="button" data-summarize="live" class="inline-flex h-11 cursor-pointer items-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700">Summarize</button>
                     <select data-export-live-mode class="hidden h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100">
@@ -126,16 +143,25 @@
                     </select>
                     <select data-export-live-format class="hidden h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100">
                         <option value="txt">TXT</option>
-                        <option value="excel">Excel</option>
                         <option value="word">Microsoft Word</option>
+                        <option value="excel">Excel</option>
                     </select>
-                    <button type="button" data-export-live aria-label="Export" title="Export" class="grid h-11 w-11 cursor-pointer place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700">
-                        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                            <path d="M12 3v12" />
-                            <path d="m7 10 5 5 5-5" />
-                            <path d="M5 21h14" />
-                        </svg>
-                    </button>
+                    <div class="relative" data-chat-export-picker="live">
+                        <button type="button" data-chat-export-trigger="live" aria-haspopup="menu" aria-expanded="false" title="Export" class="inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 text-sm font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-100">
+                            <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <path d="M12 3v12" />
+                                <path d="m7 10 5 5 5-5" />
+                                <path d="M5 21h14" />
+                            </svg>
+                            <span>Export</span>
+                        </button>
+                        <div data-chat-export-menu="live" role="menu" class="absolute bottom-full right-0 z-20 mb-2 hidden w-44 overflow-hidden rounded-lg border border-blue-100 bg-white p-1 shadow-[0_16px_40px_rgba(15,23,42,0.14)]">
+                            <button type="button" data-chat-export-option="live" data-chat-export-format="txt" role="menuitem" class="block h-9 w-full cursor-pointer rounded-md px-3 text-left text-sm font-semibold text-black transition hover:bg-blue-50 hover:text-blue-700">TXT</button>
+                            <button type="button" data-chat-export-option="live" data-chat-export-format="word" role="menuitem" class="block h-9 w-full cursor-pointer rounded-md px-3 text-left text-sm font-semibold text-black transition hover:bg-blue-50 hover:text-blue-700">Microsoft Word</button>
+                            <button type="button" data-chat-export-option="live" data-chat-export-format="excel" role="menuitem" class="block h-9 w-full cursor-pointer rounded-md px-3 text-left text-sm font-semibold text-black transition hover:bg-blue-50 hover:text-blue-700">Excel</button>
+                        </div>
+                        <button type="button" data-export-live class="hidden" tabindex="-1" aria-hidden="true"></button>
+                    </div>
                     <button type="button" data-log-live aria-label="Processing log" title="Processing log" class="inline-flex h-11 min-w-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700">
                         <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                             <path d="M8 6h13" />
@@ -148,7 +174,7 @@
                     </button>
                 </div>
 
-                <div data-chat-transcript-actions="upload" class="mx-auto mb-3 hidden max-w-[56rem] items-center justify-center gap-2">
+                <div data-chat-transcript-actions="upload" class="order-2 hidden items-center gap-2 rounded-lg border border-blue-100 bg-white p-1.5 shadow-[0_12px_32px_rgba(15,23,42,0.08)]">
                     <button type="button" data-furnish-upload class="inline-flex h-11 cursor-pointer items-center rounded-lg border border-blue-200 bg-blue-50 px-3 text-sm font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-100">Polish</button>
                     <button type="button" data-summarize="upload" class="inline-flex h-11 cursor-pointer items-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700">Summarize</button>
                     <select data-export-upload-mode class="hidden h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100">
@@ -157,16 +183,25 @@
                     </select>
                     <select data-export-upload-format class="hidden h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100">
                         <option value="txt">TXT</option>
-                        <option value="excel">Excel</option>
                         <option value="word">Microsoft Word</option>
+                        <option value="excel">Excel</option>
                     </select>
-                    <button type="button" data-export-upload aria-label="Export" title="Export" class="grid h-11 w-11 cursor-pointer place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700">
-                        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                            <path d="M12 3v12" />
-                            <path d="m7 10 5 5 5-5" />
-                            <path d="M5 21h14" />
-                        </svg>
-                    </button>
+                    <div class="relative" data-chat-export-picker="upload">
+                        <button type="button" data-chat-export-trigger="upload" aria-haspopup="menu" aria-expanded="false" title="Export" class="inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 text-sm font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-100">
+                            <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <path d="M12 3v12" />
+                                <path d="m7 10 5 5 5-5" />
+                                <path d="M5 21h14" />
+                            </svg>
+                            <span>Export</span>
+                        </button>
+                        <div data-chat-export-menu="upload" role="menu" class="absolute bottom-full right-0 z-20 mb-2 hidden w-44 overflow-hidden rounded-lg border border-blue-100 bg-white p-1 shadow-[0_16px_40px_rgba(15,23,42,0.14)]">
+                            <button type="button" data-chat-export-option="upload" data-chat-export-format="txt" role="menuitem" class="block h-9 w-full cursor-pointer rounded-md px-3 text-left text-sm font-semibold text-black transition hover:bg-blue-50 hover:text-blue-700">TXT</button>
+                            <button type="button" data-chat-export-option="upload" data-chat-export-format="word" role="menuitem" class="block h-9 w-full cursor-pointer rounded-md px-3 text-left text-sm font-semibold text-black transition hover:bg-blue-50 hover:text-blue-700">Microsoft Word</button>
+                            <button type="button" data-chat-export-option="upload" data-chat-export-format="excel" role="menuitem" class="block h-9 w-full cursor-pointer rounded-md px-3 text-left text-sm font-semibold text-black transition hover:bg-blue-50 hover:text-blue-700">Excel</button>
+                        </div>
+                        <button type="button" data-export-upload class="hidden" tabindex="-1" aria-hidden="true"></button>
+                    </div>
                     <button type="button" data-log-upload aria-label="Processing log" title="Processing log" class="inline-flex h-11 min-w-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700">
                         <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                             <path d="M8 6h13" />
@@ -179,12 +214,12 @@
                     </button>
                 </div>
 
-                <div data-chat-type-controls class="mx-auto hidden max-w-[56rem] items-center justify-center gap-3 rounded-lg border border-blue-100 bg-white px-3 py-3 shadow-[0_12px_32px_rgba(15,23,42,0.1)]">
+                <div data-chat-type-controls class="order-1 mx-auto hidden w-fit max-w-[calc(100%-2rem)] items-center justify-center gap-3 rounded-lg border border-blue-100 bg-white px-3 py-3 shadow-[0_12px_32px_rgba(15,23,42,0.1)]">
                     <button type="button" data-chat-mode-button="live" class="h-12 min-w-40 cursor-pointer rounded-lg border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-100">Live</button>
                     <button type="button" data-chat-mode-button="upload" class="h-12 min-w-40 cursor-pointer rounded-lg border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-100">Upload Audio</button>
                 </div>
 
-                <div data-chat-controls="live" class="mx-auto hidden max-w-[56rem] items-center gap-3 rounded-lg border border-blue-100 bg-white px-3 py-3 shadow-[0_12px_32px_rgba(15,23,42,0.1)] transition">
+                <div data-chat-controls="live" class="order-1 hidden w-fit max-w-[calc(100%-2rem)] items-center gap-3 rounded-lg border border-blue-100 bg-white px-3 py-3 shadow-[0_12px_32px_rgba(15,23,42,0.1)] transition">
                     <button type="button" data-record-toggle data-recording="false" aria-pressed="false" class="group flex h-12 min-w-40 cursor-pointer items-center justify-center gap-3 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white outline-none transition hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-300 disabled:cursor-not-allowed disabled:opacity-60">
                         <span data-record-icon="play">
                             <svg viewBox="0 0 24 24" class="h-5 w-5 fill-current" aria-hidden="true">
@@ -202,7 +237,7 @@
                         </span>
                     </button>
                     <button type="button" data-open-sidebar="pending" aria-expanded="false" class="h-12 min-w-32 cursor-pointer rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:border-blue-300 hover:bg-blue-50">Pending clips</button>
-                    <div data-live-progress-panel class="hidden min-w-0 flex-1">
+                    <div data-live-progress-panel class="hidden w-80 min-w-0 flex-none">
                         <div class="flex min-w-0 items-center gap-2 text-sm">
                             <span data-audio-active-name class="shrink-0 font-semibold text-slate-950">Ready</span>
                             <span data-audio-active-note class="min-w-0 truncate text-slate-500"></span>
@@ -215,12 +250,12 @@
                     </div>
                 </div>
 
-                <form data-chat-controls="upload" data-upload-form class="mx-auto hidden max-w-[56rem] items-center gap-3 rounded-lg border border-blue-100 bg-white px-3 py-3 shadow-[0_12px_32px_rgba(15,23,42,0.1)] transition" action="#" method="post" enctype="multipart/form-data">
+                <form data-chat-controls="upload" data-upload-form class="order-1 hidden w-fit max-w-[calc(100%-2rem)] flex-wrap items-center justify-center gap-3 rounded-lg border border-blue-100 bg-white px-3 py-3 shadow-[0_12px_32px_rgba(15,23,42,0.1)] transition" action="#" method="post" enctype="multipart/form-data">
                     <label for="chat_audio_file" class="inline-flex h-12 min-w-32 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-100">
                         Browse
                         <input id="chat_audio_file" name="audio_file" type="file" accept="audio/*" class="sr-only" data-upload-file>
                     </label>
-                    <div data-upload-progress-panel class="hidden min-w-0 flex-1">
+                    <div data-upload-progress-panel class="hidden w-80 min-w-0 flex-none">
                         <p data-upload-file-name class="truncate text-sm font-semibold text-slate-950">Select an audio file</p>
                         <p data-upload-file-meta class="truncate text-xs text-slate-500">WAV, MP3, M4A, AAC, OGG, FLAC.</p>
                         <p class="text-xs text-slate-500">Duration: <span data-upload-duration class="font-semibold text-slate-700">--:--</span></p>

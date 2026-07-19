@@ -8,7 +8,7 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const bundledWindowsPhp = path.join(projectRoot, 'php', 'php.exe');
 
 if (process.platform !== 'win32' || !existsSync(bundledWindowsPhp)) {
-    throw new Error('AITranscriber requires its bundled Windows PHP runtime.');
+    throw new Error('The desktop app requires its bundled Windows PHP runtime.');
 }
 
 const php = bundledWindowsPhp;

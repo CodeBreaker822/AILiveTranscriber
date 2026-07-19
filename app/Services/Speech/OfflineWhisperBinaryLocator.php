@@ -15,11 +15,17 @@ class OfflineWhisperBinaryLocator
     public function findBinaryPath(): ?string
     {
         $configured = trim((string) config('services.whisper.binary', ''));
-        $binaryName = 'aitranscriber.exe';
+        $editionBinaryName = config('app.edition') === 'jerva'
+            ? 'jerva-transcriber.exe'
+            : 'astra-transcriber.exe';
+        $runtimeExecutable = trim((string) env('AI_TRANSCRIBER_EXECUTABLE', ''));
         $candidates = array_values(array_filter([
+            $runtimeExecutable !== '' ? $runtimeExecutable : null,
             $configured !== '' ? $configured : null,
-            base_path('src-tauri/target/release/'.$binaryName),
-            base_path('src-tauri/target/debug/'.$binaryName),
+            base_path('src-tauri/target/release/'.$editionBinaryName),
+            base_path('src-tauri/target/debug/'.$editionBinaryName),
+            base_path('src-tauri/target/release/aitranscriber.exe'),
+            base_path('src-tauri/target/debug/aitranscriber.exe'),
         ]));
 
         foreach ($candidates as $candidate) {

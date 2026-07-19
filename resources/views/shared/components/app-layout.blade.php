@@ -190,7 +190,7 @@
             data-export-url="{{ route('transcripts.export') }}"
             data-default-user-id="1"
         @endif
-        class="h-[100dvh] overflow-hidden bg-[linear-gradient(180deg,_#071018_0%,_#0d1620_42%,_#101820_100%)] font-sans text-slate-100 selection:bg-cyan-300/20 selection:text-white"
+        class="h-[100dvh] overflow-hidden bg-[linear-gradient(180deg,_#071018_0%,_#0d1620_42%,_#101820_100%)] font-sans text-slate-100 {{ $focusedWorkspace ? 'selection:bg-blue-100 selection:text-black' : 'selection:bg-cyan-300/20 selection:text-white' }}"
     >
         @if (config('app.desktop_dev'))
             <div data-desktop-startup-overlay>

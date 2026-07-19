@@ -59,9 +59,11 @@ if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
 }
 
 $env:AI_TRANSCRIBER_EDITION = $selectedEdition.Key
+$env:CARGO_TARGET_DIR = Join-Path $repoRoot "src-tauri\target-dev-$($selectedEdition.Key)"
 
 Write-Host ""
 Write-Host "Launching edition: $($selectedEdition.Label)"
+Write-Host "Dev target directory: $env:CARGO_TARGET_DIR"
 
 & .\node\node.exe node_modules\@tauri-apps\cli\tauri.js dev --config $selectedEdition.Config @TauriArgs
 exit $LASTEXITCODE

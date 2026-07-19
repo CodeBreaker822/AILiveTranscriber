@@ -132,7 +132,7 @@
                         const remaining = Math.max(0, MIN_LOAD_TIME_MS - elapsed);
 
                         window.setTimeout(() => {
-                            window.location.replace('{{ route('transcription.live') }}');
+                            window.location.replace('{{ route(config('app.edition') === 'jerva' ? 'transcription.workspace' : 'transcription.live') }}');
                         }, remaining);
                         return;
                     }

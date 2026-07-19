@@ -25,8 +25,9 @@ $(function () {
     const downloadUrl = String($body.attr('data-offline-model-download-url') || '');
     const csrfToken = String($('meta[name="csrf-token"]').attr('content') || '');
     const appBrandName = String($body.attr('data-app-brand-name') || 'the app').trim();
+    const workspaceTheme = $expanded.hasClass('bg-white') || String($body.data('page') || '') === 'workspace';
 
-    if (!$downloadButton.length || !$engineSwitch.length || !$dialog.length || !$expanded.length || !statusUrl || !downloadUrl) {
+    if (!$engineSwitch.length || !$dialog.length || !$expanded.length || !statusUrl || !downloadUrl) {
         return;
     }
 
@@ -40,7 +41,9 @@ $(function () {
     if (!$modelList.length) {
         $modelList = $('<div>')
             .attr('data-offline-model-list', '')
-            .addClass('mt-3 min-h-0 overflow-y-auto rounded-lg border border-white/10 bg-white/[0.02]')
+            .addClass(workspaceTheme
+                ? 'mt-3 min-h-0 overflow-y-auto rounded-lg border border-blue-100 bg-blue-50/40'
+                : 'mt-3 min-h-0 overflow-y-auto rounded-lg border border-white/10 bg-white/[0.02]')
             .insertAfter($message);
     }
 
@@ -60,14 +63,20 @@ $(function () {
     const syncHeader = (status) => {
         const hasModel = installedModels(status).length > 0;
 
-        setVisible($downloadButton, !hasModel, 'inline-flex');
-        setVisible($engineSwitch, hasModel, 'flex');
-        $engineToggle.prop('disabled', !hasModel);
-        $downloadButton.find('[data-offline-model-label]').text('Download Offline');
+        if ($downloadButton.length) {
+            setVisible($downloadButton, !hasModel, 'inline-flex');
+            setVisible($engineSwitch, hasModel, 'flex');
+            $engineToggle.prop('disabled', !hasModel);
+            $downloadButton.find('[data-offline-model-label]').text('Download Offline');
 
-        if (!hasModel && $engineToggle.length) {
-            $engineToggle.prop('checked', false).trigger('change');
+            if (!hasModel && $engineToggle.length) {
+                $engineToggle.prop('checked', false).trigger('change');
+            }
+            return;
         }
+
+        setVisible($engineSwitch, true, 'flex');
+        $engineToggle.prop('disabled', false);
     };
     const updateProgress = (percent, label = 'Downloading') => {
         const normalized = Math.max(0, Math.min(100, Number(percent) || 0));
@@ -93,15 +102,30 @@ $(function () {
                 : unsupportedReason || `${String(model.size || 'Offline model')} Â· exceeds safe RAM budget`;
             const buttonLabel = installed ? 'Installed' : supported ? 'Download' : unsupportedReason ? 'Unavailable' : 'Low memory';
             const buttonClasses = installed
-                ? 'border-emerald-300/20 bg-emerald-300/10 text-emerald-200'
+                ? workspaceTheme
+                    ? 'border-blue-200 bg-blue-50 text-blue-700'
+                    : 'border-emerald-300/20 bg-emerald-300/10 text-emerald-200'
                 : supported
-                    ? 'border-cyan-300/30 bg-cyan-300 text-slate-950 hover:bg-cyan-200'
-                    : 'border-white/10 bg-white/[0.03] text-slate-500';
+                    ? workspaceTheme
+                        ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700'
+                        : 'border-cyan-300/30 bg-cyan-300 text-slate-950 hover:bg-cyan-200'
+                    : workspaceTheme
+                        ? 'border-blue-100 bg-white text-blue-300'
+                        : 'border-white/10 bg-white/[0.03] text-slate-500';
+            const optionClasses = workspaceTheme
+                ? 'flex min-w-0 items-center justify-between gap-4 border-b border-blue-100 px-3 py-2.5 transition last:border-b-0 hover:bg-blue-50'
+                : 'flex min-w-0 items-center justify-between gap-4 border-b border-white/10 px-3 py-2.5 transition last:border-b-0 hover:bg-white/[0.03]';
+            const labelClasses = workspaceTheme
+                ? 'block truncate text-sm font-semibold text-black'
+                : 'block truncate text-sm font-semibold text-white';
+            const detailClasses = workspaceTheme
+                ? 'mt-0.5 block text-xs text-blue-900'
+                : 'mt-0.5 block text-xs text-slate-400';
             const $option = $(`
-                <div data-offline-model-option="${String(model.id || '')}" class="flex min-w-0 items-center justify-between gap-4 border-b border-white/10 px-3 py-2.5 transition last:border-b-0 hover:bg-white/[0.03]">
+                <div data-offline-model-option="${String(model.id || '')}" class="${optionClasses}">
                     <span class="min-w-0">
-                        <span class="block truncate text-sm font-semibold text-white"></span>
-                        <span class="mt-0.5 block text-xs text-slate-400"></span>
+                        <span class="${labelClasses}"></span>
+                        <span class="${detailClasses}"></span>
                     </span>
                     <button type="button" class="min-w-[5.5rem] shrink-0 cursor-pointer rounded-md border px-3 py-1.5 text-xs font-semibold transition disabled:cursor-default ${buttonClasses}"></button>
                 </div>
@@ -119,7 +143,9 @@ $(function () {
 
         if (!models.length) {
             $('<p>')
-                .addClass('rounded-lg border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm text-amber-100')
+                .addClass(workspaceTheme
+                    ? 'rounded-lg border border-blue-100 bg-white px-4 py-3 text-sm text-blue-900'
+                    : 'rounded-lg border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm text-amber-100')
                 .text('The offline model catalog could not be loaded. Please try again.')
                 .appendTo($modelList);
         }

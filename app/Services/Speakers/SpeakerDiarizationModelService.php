@@ -132,7 +132,7 @@ class SpeakerDiarizationModelService
         $result = $this->downloads->download($url, $destinationPath, [
             'hash_algorithm' => 'sha256',
             'timeout' => (int) config('services.speaker_diarization.download_timeout', 1800),
-            'user_agent' => 'AITranscriber Speaker Separation Installer',
+            'user_agent' => $this->installerUserAgent('Speaker Separation'),
             'progress_min_bytes' => 512 * 1024,
             'progress_offset' => $completedBytes,
             'progress_total' => $totalBytes,
@@ -217,5 +217,12 @@ class SpeakerDiarizationModelService
     private function embeddingUrl(): string
     {
         return trim((string) config('services.speaker_diarization.embedding_url'));
+    }
+
+    private function installerUserAgent(string $task): string
+    {
+        $brandName = trim((string) config('app.brand_name', config('app.name', 'Transcriber')));
+
+        return ($brandName !== '' ? $brandName : 'Transcriber')." {$task} Installer";
     }
 }

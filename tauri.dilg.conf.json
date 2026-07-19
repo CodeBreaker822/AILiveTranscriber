@@ -1,6 +1,8 @@
 {
   "$schema": "./node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "ASTRA AI Transcriber",
+  "mainBinaryName": "astra-transcriber",
+  "identifier": "com.astra.transcriber",
   "build": {
     "beforeDevCommand": ".\\node\\node.exe scripts\\dev-local.mjs dilg",
     "beforeBuildCommand": ".\\node\\node.exe scripts\\prepare-desktop.mjs dilg"
@@ -16,6 +18,14 @@
         "visible": false,
         "fullscreen": false
       }
+    ]
+  },
+  "bundle": {
+    "icon": [
+      "icons/astra/32x32.png",
+      "icons/astra/128x128.png",
+      "icons/astra/128x128@2x.png",
+      "icons/astra/icon.ico"
     ]
   },
   "plugins": {

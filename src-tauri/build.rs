@@ -1,4 +1,9 @@
 fn main() {
+    println!("cargo:rerun-if-env-changed=AI_TRANSCRIBER_EDITION");
+    let edition = std::env::var("AI_TRANSCRIBER_EDITION")
+        .unwrap_or_else(|_| "dilg".to_string());
+    println!("cargo:rustc-env=AI_TRANSCRIBER_EDITION={edition}");
+
     let manifest_dir = std::path::PathBuf::from(
         std::env::var("CARGO_MANIFEST_DIR").expect("missing Cargo manifest directory"),
     );
@@ -11,8 +16,7 @@ fn main() {
         .get("version")
         .and_then(serde_json::Value::as_str)
         .expect("Tauri configuration is missing its version");
-    let brand_name = match std::env::var("AI_TRANSCRIBER_EDITION")
-        .unwrap_or_else(|_| "dilg".to_string())
+    let brand_name = match edition
         .to_ascii_lowercase()
         .as_str()
     {

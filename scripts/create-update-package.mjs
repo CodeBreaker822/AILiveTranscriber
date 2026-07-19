@@ -22,7 +22,7 @@ const releaseRoot = path.join(projectRoot, 'src-tauri', 'target', 'release');
 const buildType = process.argv[2] === 'empty' ? 'empty' : 'standard';
 
 if (process.platform !== 'win32') {
-    throw new Error('AITranscriber update packages must be built on Windows.');
+    throw new Error('Desktop update packages must be built on Windows.');
 }
 
 const tauriConfig = JSON.parse(
@@ -43,7 +43,18 @@ const envValue = (key) => {
     return match ? match[1].trim().replace(/^['"]|['"]$/g, '') : '';
 };
 const envFlag = (key) => ['1', 'true', 'yes', 'on'].includes(String(envValue(key)).toLowerCase());
-const appLogoOnly = envFlag('APP_LOGO_ONLY');
+const edition = String(
+    process.env.AI_TRANSCRIBER_EDITION
+    || process.env.APP_EDITION
+    || envValue('AI_TRANSCRIBER_EDITION')
+    || envValue('APP_EDITION')
+    || 'dilg',
+).toLowerCase() === 'jerva' ? 'jerva' : 'dilg';
+const productName = edition === 'jerva' ? 'JERVA Transcriber' : 'ASTRA AI Transcriber';
+const packageName = edition === 'jerva' ? 'JERVA-Transcriber' : 'ASTRA-AI-Transcriber';
+const binaryName = edition === 'jerva' ? 'jerva-transcriber.exe' : 'astra-transcriber.exe';
+const configuredLogoOnly = edition === 'jerva' ? envValue('JERVA_LOGO_ONLY') : envValue('ASTRA_LOGO_ONLY');
+const appLogoOnly = configuredLogoOnly === '' ? edition === 'jerva' : envFlag(edition === 'jerva' ? 'JERVA_LOGO_ONLY' : 'ASTRA_LOGO_ONLY');
 const privateBrandingPayloadDirectory = path.normalize('public/branding').toLowerCase();
 const bundledSherpaModels = [
     {
@@ -77,7 +88,7 @@ const commonPayload = [
 ];
 
 const payload = [
-    'aitranscriber.exe',
+    binaryName,
     'sherpa-onnx-c-api.dll',
     'sherpa-onnx-cxx-api.dll',
     'onnxruntime.dll',
@@ -195,7 +206,7 @@ async function chooseReleaseNotes() {
         return configured;
     }
 
-    const defaultNotes = `AITranscriber ${version} update.`;
+    const defaultNotes = `${productName} ${version} update.`;
 
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
         return defaultNotes;
@@ -298,7 +309,7 @@ const outputDirectory = await chooseOutputDirectory();
 const releaseNotes = await chooseReleaseNotes();
 mkdirSync(outputDirectory, { recursive: true });
 
-const filename = `AITranscriber-update-${version}-${platformName}-${buildType}.zip`;
+const filename = `${packageName}-update-${version}-${platformName}-${buildType}.zip`;
 const destination = path.join(outputDirectory, filename);
 const temporaryDestination = path.join(outputDirectory, `.${filename}.tmp.zip`);
 const versionFile = path.join(outputDirectory, 'version.json');
@@ -317,11 +328,11 @@ try {
     writeFileSync(
         path.join(stagingDirectory, 'update-manifest.json'),
         `${JSON.stringify({
-            product: tauriConfig.productName,
+            product: productName,
             version,
             target: platformName,
             buildType,
-            extractInto: 'AITranscriber installation directory',
+            extractInto: `${productName} installation directory`,
             requiresAppShutdown: true,
             protectedPaths: [
                 '.git',

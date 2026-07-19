@@ -20,6 +20,8 @@ const releaseCachePaths = [
     'src-tauri/target/release/libapp_lib.d',
     'src-tauri/target/release/libapp_lib.rlib',
     'src-tauri/target/release/aitranscriber.d',
+    'src-tauri/target/release/astra-transcriber.d',
+    'src-tauri/target/release/jerva-transcriber.d',
 ];
 
 const developmentCachePaths = [

@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "JERVA Transcriber",
+  "mainBinaryName": "jerva-transcriber",
   "identifier": "com.jerva.transcriber",
   "build": {
     "beforeDevCommand": ".\\node\\node.exe scripts\\dev-local.mjs jerva",
@@ -17,6 +18,14 @@
         "visible": false,
         "fullscreen": false
       }
+    ]
+  },
+  "bundle": {
+    "icon": [
+      "icons/jerva/32x32.png",
+      "icons/jerva/128x128.png",
+      "icons/jerva/128x128@2x.png",
+      "icons/jerva/icon.ico"
     ]
   },
   "plugins": {

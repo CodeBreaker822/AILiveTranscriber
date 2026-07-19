@@ -11,7 +11,7 @@ $defaultFooterText = $edition === 'jerva'
     ? 'JERVA Transcriber. All rights reserved.'
     : 'ASTRA - Adaptive Speech Transcription and Recording Assistant. All rights reserved.';
 $defaultExtraLogos = $edition === 'jerva' ? '' : 'branding/logo-1.png,branding/logo-2.png';
-$defaultLogoPath = 'AILogo.png';
+$defaultLogoPath = $edition === 'jerva' ? 'JervaLogo.png' : 'AILogo.png';
 
 return [
 
@@ -26,17 +26,27 @@ return [
     |
     */
 
-    'name' => env('APP_NAME', $defaultBrandName),
+    'name' => $edition === 'jerva'
+        ? env('JERVA_APP_NAME', $defaultBrandName)
+        : env('ASTRA_APP_NAME', $defaultBrandName),
 
     'edition' => $edition,
 
-    'brand_name' => env('APP_BRAND_NAME', env('APP_NAME', $defaultBrandName)),
+    'brand_name' => $edition === 'jerva'
+        ? env('JERVA_BRAND_NAME', $defaultBrandName)
+        : env('ASTRA_BRAND_NAME', $defaultBrandName),
 
-    'brand_short' => env('APP_BRAND_SHORT', $defaultBrandShort),
+    'brand_short' => $edition === 'jerva'
+        ? env('JERVA_BRAND_SHORT', $defaultBrandShort)
+        : env('ASTRA_BRAND_SHORT', $defaultBrandShort),
 
-    'brand_tagline' => env('APP_BRAND_TAGLINE', $defaultBrandTagline),
+    'brand_tagline' => $edition === 'jerva'
+        ? env('JERVA_BRAND_TAGLINE', $defaultBrandTagline)
+        : env('ASTRA_BRAND_TAGLINE', $defaultBrandTagline),
 
-    'brand_logo' => env('APP_LOGO_PATH', $defaultLogoPath),
+    'brand_logo' => $edition === 'jerva'
+        ? env('JERVA_LOGO_PATH', $defaultLogoPath)
+        : env('ASTRA_LOGO_PATH', $defaultLogoPath),
 
     /*
     |--------------------------------------------------------------------------
@@ -79,12 +89,19 @@ return [
 
     'url' => env('APP_URL', 'http://localhost'),
 
-    'logo_only' => filter_var(env('APP_LOGO_ONLY', $edition === 'jerva'), FILTER_VALIDATE_BOOLEAN),
+    'logo_only' => filter_var(
+        $edition === 'jerva'
+            ? env('JERVA_LOGO_ONLY', true)
+            : env('ASTRA_LOGO_ONLY', false),
+        FILTER_VALIDATE_BOOLEAN,
+    ),
 
     'extra_logos' => array_values(array_filter(
         array_map(
             fn ($path) => trim($path),
-            explode(',', (string) env('APP_EXTRA_LOGOS', $defaultExtraLogos)),
+            explode(',', (string) ($edition === 'jerva'
+                ? env('JERVA_EXTRA_LOGOS', $defaultExtraLogos)
+                : env('ASTRA_EXTRA_LOGOS', $defaultExtraLogos))),
         ),
         fn ($path) => $path !== ''
             && ! str_starts_with($path, '/')
@@ -92,9 +109,16 @@ return [
             && ! preg_match('/^[a-z][a-z0-9+.-]*:/i', $path),
     )),
 
-    'footer_license' => filter_var(env('FOOTER_LICENSE', false), FILTER_VALIDATE_BOOLEAN),
+    'footer_license' => filter_var(
+        $edition === 'jerva'
+            ? env('JERVA_FOOTER_LICENSE', false)
+            : env('ASTRA_FOOTER_LICENSE', false),
+        FILTER_VALIDATE_BOOLEAN,
+    ),
 
-    'footer_brand_text' => env('APP_FOOTER_TEXT', $defaultFooterText),
+    'footer_brand_text' => $edition === 'jerva'
+        ? env('JERVA_FOOTER_TEXT', $defaultFooterText)
+        : env('ASTRA_FOOTER_TEXT', $defaultFooterText),
 
     /*
     |--------------------------------------------------------------------------

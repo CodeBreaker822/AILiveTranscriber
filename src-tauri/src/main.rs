@@ -1,16 +1,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 #[cfg(not(windows))]
-compile_error!("AITranscriber desktop builds are supported on Windows only.");
+compile_error!("Desktop builds are supported on Windows only.");
 
 mod offline_whisper;
 mod offline_whisper_worker;
 mod speaker_diarization;
 mod speaker_diarization_worker;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::fs::{File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -39,10 +39,20 @@ fn app_brand_name() -> &'static str {
     }
 }
 
-#[derive(Clone, Serialize)]
+fn app_data_folder_name() -> &'static str {
+    app_brand_name()
+}
+
+#[derive(Clone, Deserialize, Serialize)]
 struct WhisperProgressEvent {
     progress_id: String,
     percent: i32,
+}
+
+#[derive(Deserialize)]
+struct OfflineWhisperEndpoint {
+    address: String,
+    token: String,
 }
 
 #[derive(Clone)]
@@ -120,25 +130,129 @@ fn resource_profile() -> ResourceProfile {
     }
 }
 
-#[cfg(feature = "vulkan")]
 fn detect_whisper_gpu() -> Option<GpuProfile> {
-    std::panic::catch_unwind(whisper_rs::vulkan::list_devices)
-        .ok()?
+    [detect_cuda_gpu(), detect_vulkan_gpu()]
         .into_iter()
-        .filter_map(|device| {
-            let vram_mb = (device.vram.total / 1_048_576) as u64;
+        .flatten()
+        .filter(|profile| profile.vram_mb >= 512)
+        .max_by_key(|profile| profile.vram_mb)
+}
+
+fn detect_cuda_gpu() -> Option<GpuProfile> {
+    if !windows_dll_available("cudart64")
+        || !windows_dll_available("cublas64")
+        || !windows_dll_available("cublasLt64")
+    {
+        return None;
+    }
+
+    let output = Command::new("nvidia-smi")
+        .args([
+            "--query-gpu=name,memory.total",
+            "--format=csv,noheader,nounits",
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| {
+            let (name, memory_mb) = line.rsplit_once(',')?;
+            let vram_mb = memory_mb.trim().parse::<u64>().ok()?;
 
             (vram_mb >= 512).then(|| GpuProfile {
-                name: device.name,
+                name: format!("CUDA: {}", name.trim()),
                 vram_mb,
             })
         })
         .max_by_key(|profile| profile.vram_mb)
 }
 
-#[cfg(not(feature = "vulkan"))]
-fn detect_whisper_gpu() -> Option<GpuProfile> {
-    None
+fn detect_vulkan_gpu() -> Option<GpuProfile> {
+    if !windows_dll_available("vulkan-1") {
+        return None;
+    }
+
+    detect_display_gpu("Vulkan")
+}
+
+fn windows_dll_available(name_prefix: &str) -> bool {
+    let file_matches = |directory: PathBuf| -> bool {
+        std::fs::read_dir(directory)
+            .ok()
+            .into_iter()
+            .flat_map(|entries| entries.filter_map(Result::ok))
+            .any(|entry| {
+                entry
+                    .file_name()
+                    .to_str()
+                    .map(|name| {
+                        let name = name.to_ascii_lowercase();
+                        name.starts_with(&name_prefix.to_ascii_lowercase())
+                            && name.ends_with(".dll")
+                    })
+                    .unwrap_or(false)
+            })
+    };
+
+    let system_root = std::env::var_os("WINDIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
+
+    if file_matches(system_root.join("System32")) {
+        return true;
+    }
+
+    std::env::var_os("PATH")
+        .map(|paths| std::env::split_paths(&paths).any(file_matches))
+        .unwrap_or(false)
+}
+
+fn detect_display_gpu(label: &str) -> Option<GpuProfile> {
+    let output = Command::new("wmic")
+        .args([
+            "path",
+            "Win32_VideoController",
+            "get",
+            "Name,AdapterRAM",
+            "/format:csv",
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .skip(1)
+        .filter_map(|line| {
+            let parts = line.split(',').map(str::trim).collect::<Vec<_>>();
+            let name = parts.last()?.trim();
+
+            if name.is_empty() || name.to_ascii_lowercase().contains("microsoft basic") {
+                return None;
+            }
+
+            let adapter_ram = parts
+                .iter()
+                .find_map(|part| part.parse::<u64>().ok())
+                .unwrap_or(0);
+            let vram_mb = adapter_ram / 1_048_576;
+
+            (vram_mb >= 512).then(|| GpuProfile {
+                name: format!("{label}: {name}"),
+                vram_mb,
+            })
+        })
+        .max_by_key(|profile| profile.vram_mb)
 }
 
 fn system_memory_mb() -> Option<(u64, u64)> {
@@ -239,6 +353,7 @@ fn run_offline_whisper_cli() -> bool {
 struct LaravelProcesses {
     server: Mutex<Option<Child>>,
     queue_workers: Mutex<Vec<Child>>,
+    offline_whisper_worker: Mutex<Option<Child>>,
 }
 
 struct PendingAppUpdate {
@@ -297,6 +412,15 @@ fn bundled_project_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, Str
         .map_err(|error| format!("failed to resolve bundled resources: {error}"))
 }
 
+fn production_app_data_dir() -> Result<PathBuf, String> {
+    let base = std::env::var_os("LOCALAPPDATA")
+        .or_else(|| std::env::var_os("APPDATA"))
+        .map(PathBuf::from)
+        .ok_or_else(|| "failed to resolve Windows app data directory".to_string())?;
+
+    Ok(base.join(app_data_folder_name()))
+}
+
 fn writable_paths(app: &tauri::AppHandle) -> Result<(PathBuf, PathBuf), String> {
     if cfg!(debug_assertions) {
         let project_dir = bundled_project_dir(app)?;
@@ -307,10 +431,7 @@ fn writable_paths(app: &tauri::AppHandle) -> Result<(PathBuf, PathBuf), String> 
         ));
     }
 
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| format!("failed to resolve app data directory: {error}"))?;
+    let app_data_dir = production_app_data_dir()?;
 
     Ok((
         app_data_dir.join("database.sqlite"),
@@ -525,6 +646,176 @@ fn env_path(path: &std::path::Path) -> String {
     let path = path.display().to_string();
 
     path.strip_prefix(r"\\?\").unwrap_or(&path).to_string()
+}
+
+fn offline_whisper_endpoint_path(storage_path: &std::path::Path) -> PathBuf {
+    storage_path
+        .join("app")
+        .join("private")
+        .join("offline-whisper-worker.json")
+}
+
+fn offline_whisper_progress_path(storage_path: &std::path::Path) -> PathBuf {
+    storage_path
+        .join("app")
+        .join("private")
+        .join("offline-whisper-progress.jsonl")
+}
+
+fn gpu_worker_backend(resources: &ResourceProfile) -> Option<&'static str> {
+    if !resources.gpu_available || resources.whisper_gpu_vram_budget_mb == 0 {
+        return None;
+    }
+
+    if resources.gpu_name.starts_with("CUDA:") {
+        return Some("cuda");
+    }
+
+    if resources.gpu_name.starts_with("Vulkan:") {
+        return Some("vulkan");
+    }
+
+    None
+}
+
+fn offline_whisper_worker_path(paths: &LaravelPaths, backend: &str) -> Option<PathBuf> {
+    let file_name = format!("offline-whisper-{backend}.exe");
+    let candidates = [
+        paths.project_dir.join("workers").join(&file_name),
+        paths
+            .project_dir
+            .join("build")
+            .join("tauri")
+            .join("workers")
+            .join(&file_name),
+    ];
+
+    candidates.into_iter().find(|candidate| candidate.is_file())
+}
+
+fn emit_external_whisper_progress(app: tauri::AppHandle, progress_path: PathBuf) {
+    thread::Builder::new()
+        .name("offline-whisper-progress-tail".to_string())
+        .spawn(move || {
+            let mut position = 0_u64;
+
+            loop {
+                if let Ok(mut file) = File::open(&progress_path) {
+                    if file.seek(SeekFrom::Start(position)).is_ok() {
+                        let mut content = String::new();
+
+                        if file.read_to_string(&mut content).is_ok() {
+                            position = position.saturating_add(content.len() as u64);
+
+                            for line in content.lines() {
+                                if let Ok(event) = serde_json::from_str::<WhisperProgressEvent>(line)
+                                {
+                                    let _ = app.emit("offline-whisper-progress", event);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                thread::sleep(Duration::from_millis(120));
+            }
+        })
+        .ok();
+}
+
+fn start_external_offline_whisper_worker(
+    app: &tauri::AppHandle,
+    paths: &LaravelPaths,
+) -> Result<bool, String> {
+    let Some(backend) = gpu_worker_backend(&paths.resources) else {
+        return Ok(false);
+    };
+    let Some(worker_path) = offline_whisper_worker_path(paths, backend) else {
+        append_startup_log(
+            paths,
+            &format!(
+                "GPU detected through {}, but the {backend} offline Whisper worker is not bundled. Falling back to CPU.",
+                paths.resources.gpu_name
+            ),
+        );
+        return Ok(false);
+    };
+
+    let endpoint_path = offline_whisper_endpoint_path(&paths.storage_path);
+    let progress_path = offline_whisper_progress_path(&paths.storage_path);
+    let _ = std::fs::remove_file(&endpoint_path);
+    let _ = std::fs::remove_file(&progress_path);
+
+    let mut command = Command::new(&worker_path);
+    let worker_args = vec![
+        "--offline-whisper-worker".to_string(),
+        "--storage".to_string(),
+        env_path(&paths.storage_path),
+        "--threads".to_string(),
+        paths.resources.whisper_threads.to_string(),
+        "--progress".to_string(),
+        env_path(&progress_path),
+    ];
+
+    command
+        .args(worker_args)
+        .current_dir(&paths.project_dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW);
+
+    let worker = match command.spawn() {
+        Ok(worker) => worker,
+        Err(error) => {
+            append_startup_log(
+                paths,
+                &format!(
+                    "Failed to start {backend} offline Whisper worker {}: {error}. Falling back to CPU.",
+                    worker_path.display()
+                ),
+            );
+
+            return Ok(false);
+        }
+    };
+
+    let state: State<LaravelProcesses> = app.state();
+    *state
+        .offline_whisper_worker
+        .lock()
+        .map_err(|error| error.to_string())? = Some(worker);
+    emit_external_whisper_progress(app.clone(), progress_path);
+    append_startup_log(
+        paths,
+        &format!(
+            "Started {backend} offline Whisper worker for {}.",
+            paths.resources.gpu_name
+        ),
+    );
+
+    Ok(true)
+}
+
+fn start_offline_whisper_worker(app: &tauri::AppHandle, paths: &LaravelPaths) -> Result<(), String> {
+    if start_external_offline_whisper_worker(app, paths)? {
+        return Ok(());
+    }
+
+    let _ = std::fs::remove_file(offline_whisper_endpoint_path(&paths.storage_path));
+    offline_whisper_worker::start(&paths.storage_path, paths.resources.whisper_threads, {
+        let progress_handle = app.clone();
+
+        move |progress_id, percent| {
+            let _ = progress_handle.emit(
+                "offline-whisper-progress",
+                WhisperProgressEvent {
+                    progress_id,
+                    percent,
+                },
+            );
+        }
+    })
 }
 
 fn run_migrations(
@@ -898,6 +1189,13 @@ fn wait_for_laravel(paths: &LaravelPaths) -> Result<(), String> {
 
 fn stop_laravel(app: &tauri::AppHandle) {
     let state: State<LaravelProcesses> = app.state();
+
+    if let Ok(mut worker) = state.offline_whisper_worker.lock() {
+        if let Some(mut child) = worker.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
 
     if let Ok(mut workers) = state.queue_workers.lock() {
         for mut child in workers.drain(..) {
@@ -1335,9 +1633,38 @@ async fn install_update(
     Ok(())
 }
 
+fn cancel_external_offline_whisper(storage_path: &std::path::Path, progress_id: &str) -> bool {
+    let endpoint_path = offline_whisper_endpoint_path(storage_path);
+    let endpoint = std::fs::read_to_string(endpoint_path)
+        .ok()
+        .and_then(|content| serde_json::from_str::<OfflineWhisperEndpoint>(&content).ok());
+    let Some(endpoint) = endpoint else {
+        return false;
+    };
+    let Ok(mut stream) = TcpStream::connect(endpoint.address) else {
+        return false;
+    };
+    let payload = serde_json::json!({
+        "token": endpoint.token,
+        "action": "cancel",
+        "progress_id": progress_id,
+    });
+    let Ok(mut encoded) = serde_json::to_vec(&payload) else {
+        return false;
+    };
+
+    encoded.push(b'\n');
+    stream.write_all(&encoded).is_ok()
+}
+
 #[tauri::command]
-fn cancel_offline_whisper(progress_id: String) -> bool {
-    offline_whisper_worker::cancel(&progress_id)
+fn cancel_offline_whisper(app: tauri::AppHandle, progress_id: String) -> bool {
+    let local_cancelled = offline_whisper_worker::cancel(&progress_id);
+    let external_cancelled = laravel_paths(&app)
+        .map(|paths| cancel_external_offline_whisper(&paths.storage_path, &progress_id))
+        .unwrap_or(false);
+
+    local_cancelled || external_cancelled
 }
 
 fn main() {
@@ -1358,6 +1685,7 @@ fn main() {
         .manage(LaravelProcesses {
             server: Mutex::new(None),
             queue_workers: Mutex::new(Vec::new()),
+            offline_whisper_worker: Mutex::new(None),
         })
         .manage(PendingAppUpdate {
             update: Mutex::new(None),
@@ -1375,23 +1703,7 @@ fn main() {
             let handle = app.handle().clone();
 
             if let Ok(paths) = laravel_paths(&handle) {
-                if let Err(error) = offline_whisper_worker::start(
-                    &paths.storage_path,
-                    paths.resources.whisper_threads,
-                    {
-                        let progress_handle = handle.clone();
-
-                        move |progress_id, percent| {
-                            let _ = progress_handle.emit(
-                                "offline-whisper-progress",
-                                WhisperProgressEvent {
-                                    progress_id,
-                                    percent,
-                                },
-                            );
-                        }
-                    },
-                ) {
+                if let Err(error) = start_offline_whisper_worker(&handle, &paths) {
                     append_startup_log(
                         &paths,
                         &format!("Offline Whisper worker unavailable: {error}"),

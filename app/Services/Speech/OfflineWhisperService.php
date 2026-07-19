@@ -36,9 +36,11 @@ class OfflineWhisperService
         $requiredMemoryMb = $this->models->requiredMemoryMb($model);
 
         if ($memoryBudgetMb > 0 && $requiredMemoryMb > $memoryBudgetMb) {
+            $brandName = trim((string) config('app.brand_name', config('app.name', 'Transcriber'))) ?: 'Transcriber';
+
             throw new SpeechToTextException(
                 "The selected Whisper model needs about {$requiredMemoryMb} MB of working memory, "
-                ."but AITranscriber reserved only {$memoryBudgetMb} MB to keep this computer responsive. Choose a smaller model."
+                ."but {$brandName} reserved only {$memoryBudgetMb} MB to keep this computer responsive. Choose a smaller model."
             );
         }
 

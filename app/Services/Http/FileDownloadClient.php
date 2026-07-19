@@ -80,7 +80,7 @@ class FileDownloadClient
             CURLOPT_CONNECTTIMEOUT => 15,
             CURLOPT_TIMEOUT => (int) ($options['timeout'] ?? 1800),
             CURLOPT_CAINFO => $this->http->caBundlePath(),
-            CURLOPT_USERAGENT => (string) ($options['user_agent'] ?? 'AITranscriber Installer'),
+            CURLOPT_USERAGENT => (string) ($options['user_agent'] ?? $this->defaultUserAgent()),
             CURLOPT_FAILONERROR => false,
             CURLOPT_RETURNTRANSFER => false,
             CURLOPT_WRITEFUNCTION => function ($curl, string $chunk) use ($destination, $hash, &$receivedBytes, &$lastReportedBytes, $progressMinBytes, $progressOffset, $progressTotal, $progress, $cancelled): int {
@@ -139,6 +139,13 @@ class FileDownloadClient
             'curl_code' => $curlCode,
             'curl_error' => $curlError !== '' ? $curlError : $error,
         ];
+    }
+
+    private function defaultUserAgent(): string
+    {
+        $brandName = trim((string) config('app.brand_name', config('app.name', 'Transcriber')));
+
+        return ($brandName !== '' ? $brandName : 'Transcriber').' Installer';
     }
 
     private function copyLocalFile(string $url, string $destinationPath, array $options): array

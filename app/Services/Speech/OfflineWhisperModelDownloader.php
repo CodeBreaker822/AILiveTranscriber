@@ -114,7 +114,7 @@ class OfflineWhisperModelDownloader
         $result = $this->downloads->download($url, $partialPath, [
             'hash_algorithm' => 'sha1',
             'timeout' => (int) config('services.whisper.download_timeout', 3600),
-            'user_agent' => 'AITranscriber Offline Model Installer',
+            'user_agent' => $this->installerUserAgent('Offline Model'),
             'progress_min_bytes' => 1024 * 1024,
             'progress' => $progress,
             'cancelled' => $cancelled,
@@ -145,5 +145,12 @@ class OfflineWhisperModelDownloader
             'sha1' => $result['hash'],
             'received_bytes' => $result['received_bytes'],
         ];
+    }
+
+    private function installerUserAgent(string $task): string
+    {
+        $brandName = trim((string) config('app.brand_name', config('app.name', 'Transcriber')));
+
+        return ($brandName !== '' ? $brandName : 'Transcriber')." {$task} Installer";
     }
 }

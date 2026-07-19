@@ -15,9 +15,35 @@ const cliArgs = process.argv.slice(2).map((arg) => String(arg).toLowerCase());
 const requestedEdition = cliArgs.map((arg) => editionAliases.get(arg)).find(Boolean)
     || editionAliases.get(String(process.env.AI_TRANSCRIBER_EDITION || '').toLowerCase())
     || 'dilg';
+const editionSettings = {
+    dilg: {
+        APP_EDITION: 'dilg',
+        ASTRA_APP_NAME: 'ASTRA AI Transcriber',
+        ASTRA_BRAND_NAME: 'ASTRA AI Transcriber',
+        ASTRA_BRAND_SHORT: 'ASTRA',
+        ASTRA_BRAND_TAGLINE: 'Adaptive Speech Transcription and Recording Assistant.',
+        ASTRA_LOGO_PATH: 'AILogo.png',
+        ASTRA_EXTRA_LOGOS: 'branding/logo-1.png,branding/logo-2.png',
+        ASTRA_FOOTER_TEXT: 'ASTRA - Adaptive Speech Transcription and Recording Assistant. All rights reserved.',
+        ASTRA_LOGO_ONLY: 'false',
+        ASTRA_FOOTER_LICENSE: 'false',
+    },
+    jerva: {
+        APP_EDITION: 'jerva',
+        JERVA_APP_NAME: 'JERVA Transcriber',
+        JERVA_BRAND_NAME: 'JERVA Transcriber',
+        JERVA_BRAND_SHORT: 'JERVA',
+        JERVA_BRAND_TAGLINE: 'Transcription workspace.',
+        JERVA_LOGO_PATH: 'JervaLogo.png',
+        JERVA_EXTRA_LOGOS: '',
+        JERVA_FOOTER_TEXT: 'JERVA Transcriber. All rights reserved.',
+        JERVA_LOGO_ONLY: 'true',
+        JERVA_FOOTER_LICENSE: 'false',
+    },
+};
 
 if (process.platform !== 'win32' || !existsSync(bundledWindowsPhp)) {
-    throw new Error('AITranscriber development requires its bundled Windows PHP runtime.');
+    throw new Error('Desktop development requires its bundled Windows PHP runtime.');
 }
 
 const php = bundledWindowsPhp;
@@ -28,6 +54,7 @@ const runtimeEnvironment = {
     SSL_CERT_FILE: caBundle,
     AI_TRANSCRIBER_CA_BUNDLE: caBundle,
     ...resourceEnvironment(),
+    ...editionSettings[requestedEdition],
     AI_TRANSCRIBER_EDITION: requestedEdition,
     AI_TRANSCRIBER_DESKTOP_DEV: 'true',
 };

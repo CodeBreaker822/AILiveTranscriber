@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -23,35 +23,44 @@ const requestedEdition = cliArgs.map((arg) => editionAliases.get(arg)).find(Bool
 const editionSettings = {
     dilg: {
         APP_EDITION: 'dilg',
-        APP_NAME: 'ASTRA AI Transcriber',
-        APP_BRAND_NAME: 'ASTRA AI Transcriber',
-        APP_BRAND_SHORT: 'ASTRA',
-        APP_BRAND_TAGLINE: 'Adaptive Speech Transcription and Recording Assistant.',
-        APP_LOGO_PATH: 'AILogo.png',
-        APP_EXTRA_LOGOS: 'branding/logo-1.png,branding/logo-2.png',
-        APP_FOOTER_TEXT: 'ASTRA - Adaptive Speech Transcription and Recording Assistant. All rights reserved.',
-        APP_LOGO_ONLY: 'false',
-        FOOTER_LICENSE: 'false',
+        ASTRA_APP_NAME: 'ASTRA AI Transcriber',
+        ASTRA_BRAND_NAME: 'ASTRA AI Transcriber',
+        ASTRA_BRAND_SHORT: 'ASTRA',
+        ASTRA_BRAND_TAGLINE: 'Adaptive Speech Transcription and Recording Assistant.',
+        ASTRA_LOGO_PATH: 'AILogo.png',
+        ASTRA_EXTRA_LOGOS: 'branding/logo-1.png,branding/logo-2.png',
+        ASTRA_FOOTER_TEXT: 'ASTRA - Adaptive Speech Transcription and Recording Assistant. All rights reserved.',
+        ASTRA_LOGO_ONLY: 'false',
+        ASTRA_FOOTER_LICENSE: 'false',
     },
     jerva: {
         APP_EDITION: 'jerva',
-        APP_NAME: 'JERVA Transcriber',
-        APP_BRAND_NAME: 'JERVA Transcriber',
-        APP_BRAND_SHORT: 'JERVA',
-        APP_BRAND_TAGLINE: 'Transcription workspace.',
-        APP_LOGO_PATH: 'AILogo.png',
-        APP_EXTRA_LOGOS: '',
-        APP_FOOTER_TEXT: 'JERVA Transcriber. All rights reserved.',
-        APP_LOGO_ONLY: 'true',
-        FOOTER_LICENSE: 'false',
+        JERVA_APP_NAME: 'JERVA Transcriber',
+        JERVA_BRAND_NAME: 'JERVA Transcriber',
+        JERVA_BRAND_SHORT: 'JERVA',
+        JERVA_BRAND_TAGLINE: 'Transcription workspace.',
+        JERVA_LOGO_PATH: 'JervaLogo.png',
+        JERVA_EXTRA_LOGOS: '',
+        JERVA_FOOTER_TEXT: 'JERVA Transcriber. All rights reserved.',
+        JERVA_LOGO_ONLY: 'true',
+        JERVA_FOOTER_LICENSE: 'false',
     },
 };
+const selectedBrandName = editionSettings[requestedEdition].JERVA_BRAND_NAME
+    || editionSettings[requestedEdition].ASTRA_BRAND_NAME
+    || 'Transcriber';
+const selectedResourceView = requestedEdition === 'dilg' ? 'astra' : 'jerva';
 const tauriConfig = JSON.parse(
     readFileSync(path.join(projectRoot, 'src-tauri', 'tauri.conf.json'), 'utf8'),
 );
-const appLogoOnly = editionSettings[requestedEdition].APP_LOGO_ONLY === 'true';
+const appLogoOnly = (
+    editionSettings[requestedEdition].JERVA_LOGO_ONLY
+    || editionSettings[requestedEdition].ASTRA_LOGO_ONLY
+) === 'true';
 const privateBrandingDirectory = path.normalize('branding').toLowerCase();
-const primaryLogoPath = path.normalize(editionSettings[requestedEdition].APP_LOGO_PATH).toLowerCase();
+const primaryLogoPath = path.normalize(
+    editionSettings[requestedEdition].JERVA_LOGO_PATH || editionSettings[requestedEdition].ASTRA_LOGO_PATH,
+).toLowerCase();
 Object.assign(process.env, editionSettings[requestedEdition]);
 const bundledSherpaModels = [
     {
@@ -79,24 +88,6 @@ function verifyBundledSherpaModels() {
             throw new Error(`Bundled Sherpa model checksum failed: ${modelPath}`);
         }
     }
-}
-
-function prepareVulkanLoader() {
-    const sdk = String(process.env.VULKAN_SDK || '').trim();
-    const windowsDirectory = String(process.env.SystemRoot || process.env.WINDIR || '').trim();
-    const candidates = [
-        sdk ? path.join(sdk, 'Bin', 'vulkan-1.dll') : '',
-        windowsDirectory ? path.join(windowsDirectory, 'System32', 'vulkan-1.dll') : '',
-    ];
-    const source = candidates.find((candidate) => candidate && existsSync(candidate));
-
-    if (!source) {
-        return;
-    }
-
-    const destination = path.join(projectRoot, 'src-tauri', 'target', 'release', 'vulkan-1.dll');
-    mkdirSync(path.dirname(destination), { recursive: true });
-    copyFileSync(source, destination);
 }
 
 function preparePackagedPublicDirectory() {
@@ -135,7 +126,7 @@ function preparePackagedResourcesDirectory() {
     const sourceDirectory = path.join(projectRoot, 'resources');
     const destinationDirectory = path.join(projectRoot, 'build', 'tauri', 'resources');
     const viewsDirectory = path.join(sourceDirectory, 'views');
-    const selectedViewsDirectory = path.normalize(path.join('views', requestedEdition)).toLowerCase();
+    const selectedViewsDirectory = path.normalize(path.join('views', selectedResourceView)).toLowerCase();
     const sharedViewsDirectory = path.normalize(path.join('views', 'shared')).toLowerCase();
 
     rmSync(destinationDirectory, { recursive: true, force: true });
@@ -220,7 +211,6 @@ function run(command, args) {
 
 try {
     verifyBundledSherpaModels();
-    prepareVulkanLoader();
     rmSync(path.join(projectRoot, 'public', 'hot'), { force: true });
     await run(process.execPath, [runPhp, 'artisan', 'app:build-vad-cli']);
     await run(process.execPath, [
@@ -231,6 +221,7 @@ try {
     await run(process.execPath, [vite, 'build']);
     const buildMetadataDirectory = path.join(projectRoot, 'build', 'tauri');
     mkdirSync(buildMetadataDirectory, { recursive: true });
+    mkdirSync(path.join(buildMetadataDirectory, 'workers'), { recursive: true });
     preparePackagedEnvFile();
     preparePackagedPublicDirectory();
     preparePackagedResourcesDirectory();
@@ -238,7 +229,7 @@ try {
         path.join(buildMetadataDirectory, 'version.json'),
         `${JSON.stringify({
             version: tauriConfig.version,
-            notes: `${editionSettings[requestedEdition].APP_BRAND_NAME} ${tauriConfig.version} update.`,
+            notes: `${selectedBrandName} ${tauriConfig.version} update.`,
         }, null, 2)}\n`,
     );
 } catch (error) {

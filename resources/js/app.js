@@ -111,6 +111,9 @@ $(function () {
     const $whisperModelControls = $('[data-whisper-model-control]');
     const $whisperModel = $('[data-whisper-model]');
     const $onlineOnlyTranscriptActions = $('[data-furnish-live], [data-furnish-upload], [data-summarize]');
+    const $offlineModelDownloadButton = $('[data-offline-model-download]');
+    const $chatPlanOnline = $('[data-chat-plan-online]');
+    const $chatPlanOffline = $('[data-chat-plan-offline]');
     const transcriptionEngineStorageKey = 'ai-transcriber-transcription-engine';
     const whisperModelStorageKey = 'ai-transcriber-whisper-model';
     const connectivityUrl = String($body.attr('data-update-connectivity-url') || '');
@@ -125,20 +128,24 @@ $(function () {
         $languageControls.toggleClass('hidden', offline);
         $whisperModelControls.toggleClass('hidden', !offline);
         $onlineOnlyTranscriptActions.toggleClass('hidden', offline);
+        $chatPlanOnline.toggleClass('hidden', offline).toggleClass('flex', !offline);
+        $chatPlanOffline.toggleClass('hidden', !offline);
     };
 
     const applyEngineAvailability = (connectivity) => {
         const online = connectivity?.online === true && navigator.onLine !== false;
         const offlineAvailable = connectivity?.offline_available === true;
-        $transcriptionEngine.prop('disabled', !offlineAvailable);
-        $transcriptionEngineSwitch.toggleClass('hidden', !offlineAvailable)
-            .toggleClass('flex', offlineAvailable);
+        const deferredModelDownload = !$offlineModelDownloadButton.length && $whisperModel.length > 0;
+        const offlineSelectable = offlineAvailable || deferredModelDownload;
+        $transcriptionEngine.prop('disabled', !offlineSelectable);
+        $transcriptionEngineSwitch.toggleClass('hidden', !offlineSelectable)
+            .toggleClass('flex', offlineSelectable);
 
-        if (!online && offlineAvailable) {
+        if (!online && offlineSelectable) {
             $transcriptionEngine.prop('checked', true);
-        } else if (!offlineAvailable && online) {
+        } else if (!offlineSelectable && online) {
             $transcriptionEngine.prop('checked', false);
-        } else if (online && offlineAvailable) {
+        } else if (online && offlineSelectable) {
             const preferred = window.localStorage.getItem(transcriptionEngineStorageKey);
             $transcriptionEngine.prop('checked', preferred === 'offline');
         }
@@ -182,10 +189,24 @@ $(function () {
         $whisperModel.on('change', function () {
             const model = getWhisperModel();
             window.localStorage.setItem(whisperModelStorageKey, model);
-            if (!installedWhisperModels.has(model)) {
-                $(window).trigger('offline-model:catalog-request', [{ model }]);
-            }
         });
+        document.addEventListener('click', (event) => {
+            const target = event.target?.closest?.('[data-record-toggle], [data-upload-queue]');
+
+            if (!target || target.disabled || getTranscriptionEngine() !== 'offline') {
+                return;
+            }
+
+            const model = getWhisperModel();
+            if (installedWhisperModels.has(model)) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            $(window).trigger('offline-model:catalog-request', [{ model }]);
+        }, true);
         $(window).on('offline-model:status', (event, payload = {}) => {
             const models = (Array.isArray(payload.models) ? payload.models : [])
                 .filter((model) => model.kind !== 'diarization');
@@ -199,14 +220,6 @@ $(function () {
                     .text(`${model.label} · ${model.size} · ${suffix}`)
                     .prop('disabled', !supported);
             });
-
-            if (!installedWhisperModels.has(getWhisperModel())) {
-                const fallback = models.find((model) => model.installed && model.supported !== false)?.id;
-                if (fallback) {
-                    $whisperModel.val(fallback);
-                    window.localStorage.setItem(whisperModelStorageKey, fallback);
-                }
-            }
         });
         $(window).on('online offline offline-model:installed', refreshEngineAvailability);
         refreshEngineAvailability();
@@ -397,7 +410,7 @@ $(function () {
                     || !$('[data-chat-transcript-actions="upload"]').hasClass('hidden')
                 );
 
-            $commandArea.toggleClass('hidden', !visible);
+            $commandArea.toggleClass('hidden', !visible).toggleClass('flex', visible);
         };
 
         const clearMode = () => {
@@ -449,6 +462,7 @@ $(function () {
                 .addClass('hidden')
                 .removeClass('flex');
             $(`[data-chat-panel="${nextMode}"]`).removeClass('hidden');
+            $(`[data-chat-controls="${nextMode}"]`).removeClass('hidden').addClass('flex');
             updatePendingPanel(nextMode);
             updateTitle();
             syncTranscriptActions(nextMode);
@@ -555,6 +569,52 @@ $(function () {
 
         $('[data-chat-mode-button]').on('click', function () {
             setMode(String($(this).attr('data-chat-mode-button') || ''));
+        });
+
+        const closeExportMenus = () => {
+            $('[data-chat-export-menu]').addClass('hidden');
+            $('[data-chat-export-trigger]').attr('aria-expanded', 'false');
+        };
+
+        $workspace.on('click', '[data-chat-export-trigger]', function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+
+            const mode = normalizeMode($(this).attr('data-chat-export-trigger'));
+            const $menu = $(`[data-chat-export-menu="${mode}"]`);
+            const shouldOpen = $menu.hasClass('hidden');
+            closeExportMenus();
+
+            if (shouldOpen) {
+                $menu.removeClass('hidden');
+                $(this).attr('aria-expanded', 'true');
+            }
+        });
+
+        $workspace.on('click', '[data-chat-export-option]', function (event) {
+            event.preventDefault();
+
+            const mode = normalizeMode($(this).attr('data-chat-export-option'));
+            const format = String($(this).attr('data-chat-export-format') || 'txt');
+            if (!mode || !['txt', 'word', 'excel'].includes(format)) {
+                return;
+            }
+
+            $(`[data-export-${mode}-format]`).val(format);
+            closeExportMenus();
+            $(`[data-chat-export-picker="${mode}"] [data-export-${mode}]`).trigger('click');
+        });
+
+        $(document).on('click keydown', function (event) {
+            if (event.type === 'keydown' && event.key !== 'Escape') {
+                return;
+            }
+
+            if ($(event.target).closest('[data-chat-export-picker]').length) {
+                return;
+            }
+
+            closeExportMenus();
         });
 
         $('[data-chat-change-type]').on('click', () => {
